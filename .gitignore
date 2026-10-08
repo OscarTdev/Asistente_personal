@@ -1,0 +1,25 @@
+# Secretos y variables de entorno
+.env
+.env.*
+*.pem
+*.key
+
+# Dependencias
+node_modules/
+__pycache__/
+.venv/
+venv/
+
+# Archivos generados
+dist/
+build/
+*.log
+*.tmp
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
