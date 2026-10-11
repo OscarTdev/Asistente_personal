@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: asistente_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-asistente}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-asistente}
+      POSTGRES_DB: ${POSTGRES_DB:-asistente}
+    ports:
+      # 5433 en el host: el 5432 lo ocupa un servicio PostgreSQL local de Windows.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-asistente} -d ${POSTGRES_DB:-asistente}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: asistente_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres_data:
+  redis_data:
