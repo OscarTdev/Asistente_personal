@@ -31,3 +31,5 @@ Thumbs.db
 # Editores
 .vscode/
 .idea/
+.playwright-mcp/
+*.timestamp-*.mjs
