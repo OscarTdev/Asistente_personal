@@ -58,7 +58,7 @@ docker-compose.yml → Postgres + Redis (luego Evolution API)
 ```powershell
 docker compose up -d                            # infra (Postgres + Redis)
 cd backend; .\.venv\Scripts\activate.ps1        # activar venv
-uvicorn app.main:app --reload --port 8000       # backend → http://localhost:8000
+uvicorn app.main:app --reload --port 8000 --loop asyncio:SelectorEventLoop  # backend (o: python -m app.main)
 alembic upgrade head                            # aplicar migraciones
 pytest -v                                       # tests
 ruff check .                                    # lint

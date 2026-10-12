@@ -1,1 +1,214 @@
 @import "tailwindcss";
+
+/*
+ * Aura design tokens — "El conserje de boutique"
+ * The concierge desk: cream paper ground, clear paper panels with hairline
+ * seams, a bottle-green shell (the concierge's uniform), brass as functional
+ * detail only (rails, marks), sealing-wax red for errata and destruction.
+ * World lends only: type, palette, density, one signature move.
+ */
+@theme {
+  /* Paper & warm linen neutrals */
+  --color-ground: #f4f1e9;
+  --color-panel: #fffdf8;
+  --color-linen-50: #faf8f1;
+  --color-linen-100: #efeadd;
+  --color-linen-200: #e5dfcd;
+  --color-linen-300: #d6cdb4;
+  --color-linen-400: #b8ad92;
+  --color-linen-500: #918870;
+  --color-linen-600: #6e6653;
+  --color-ink: #211e18;
+  --color-ink-soft: #4c473c;
+
+  /* Shell — bottle green (the uniform) */
+  --color-pine: #1d4433;
+  --color-pine-deep: #143325;
+  --color-pine-wash: #e6efe9;
+
+  /* Brass — functional detail only */
+  --color-brass: #c9a86a;
+  --color-brass-deep: #a5834f;
+  --color-brass-bright: #debf88;
+  --color-brass-ink: #6d5227;
+  --color-brass-wash: #eadbb8;
+
+  /* Semantic */
+  --color-ok: #1e6b4a;
+  --color-ok-wash: #e6efe9;
+  --color-lacre: #9c2f26;
+  --color-lacre-wash: #f6e7e4;
+  --color-lacre-tint: #e2a49d;
+  --color-petrol: #31555c;
+  --color-petrol-wash: #e7eff0;
+
+  /* Component aliases kept in sync */
+  --color-background: #f4f1e9;
+  --color-foreground: #211e18;
+  --color-card: #fffdf8;
+  --color-card-foreground: #211e18;
+  --color-primary: #1d4433;
+  --color-primary-foreground: #f4f1e9;
+  --color-secondary: #efeadd;
+  --color-secondary-foreground: #211e18;
+  --color-muted: #efeadd;
+  --color-muted-foreground: #6e6653;
+  --color-accent: #efeadd;
+  --color-accent-foreground: #211e18;
+  --color-destructive: #9c2f26;
+  --color-destructive-foreground: #fffdf8;
+  --color-border: #e5dfcd;
+  --color-input: #d6cdb4;
+  --color-ring: #1d4433;
+}
+
+/*
+ * Display voice: EB Garamond, self-hosted (hotel-stationery lettering).
+ * The UI voice stays the system sans — Operate mode, one working face for
+ * data, labels and controls; the serif owns only the display moments.
+ */
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("/fonts/eb-garamond-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+h1,
+.brand-face {
+  font-family: "EB Garamond", Georgia, "Times New Roman", serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-ground);
+  color: var(--color-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  caret-color: var(--color-ink);
+}
+
+/* Browser surfaces carry the design: selection, scrollbars */
+::selection {
+  background: #eadbb8;
+  color: #211e18;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d6cdb4 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #d6cdb4;
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* ── Utility vocabulary ─────────────────────────────────────────────── */
+
+/* Hotel-stationery price discipline: tabular figures for every COP value */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stationery plate labels */
+.plate-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-linen-600);
+}
+
+/* The signature move: the concierge message slip (ficha) */
+.ficha {
+  position: relative;
+  border: 1px solid var(--color-linen-200);
+  background: var(--color-panel);
+  border-radius: 6px;
+}
+.ficha::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  width: 34px;
+  height: 3px;
+  border-radius: 0 0 2px 2px;
+  background: var(--color-brass-deep);
+}
+
+/* Change-hold: the concierge notes a change and it stays noted until seen —
+   pine-wash tint with a brass edge (the wax seal). Cleared on
+   pointerenter/focus (the "noticed" signals). */
+.row-hold {
+  background: var(--color-pine-wash);
+  box-shadow: inset 3px 0 0 var(--color-brass-deep);
+  transition:
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+
+/* Errata slip — errors are persistent notes, never vanishing toasts */
+.slip {
+  border: 1px solid #ecc8c1;
+  background: var(--color-panel);
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+.slip-label {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-lacre);
+}
+
+/* The desk edge under a table header */
+.thead-edge {
+  border-bottom: 2px solid var(--color-pine);
+}
+
+/* Loading skeleton — slips being written, not spinners */
+.skel {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-linen-100);
+  border-radius: 4px;
+}
+.skel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 253, 248, 0.85), transparent);
+  animation: skel 1.4s ease-out infinite;
+}
+@keyframes skel {
+  100% {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel::after {
+    animation: none;
+  }
+}

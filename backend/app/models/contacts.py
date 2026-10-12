@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,3 +19,7 @@ class Contact(Base, TimestampMixin):
     )
     wa_id: Mapped[str] = mapped_column(String(50), nullable=False)  # teléfono, solo dígitos
     name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # False = retirado (soft delete): el contacto deja de aparecer por defecto
+    # en el panel, pero su historial se conserva (Ley 1581: no borrar datos).
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")

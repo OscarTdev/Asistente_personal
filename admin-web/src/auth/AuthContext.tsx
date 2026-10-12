@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { loginRequest, ApiError } from '../lib/api'
 import { User } from '../types'
 
@@ -20,16 +20,31 @@ export function useAuth() {
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null)
-  const [token, setToken] = useState<string | null>(null)
+  // Restore the session SYNCHRONOUSLY from localStorage so the very first
+  // render is authenticated. Restoring in an effect causes a redirect race:
+  // a full page load of /catalog first renders as logged-out, matches the
+  // splat route, and bounces to /login, then to / once the user restores.
+  const [user, setUser] = useState<User | null>(() => {
+    const raw = localStorage.getItem('asistente_user')
+    if (!raw) {
+      return null
+    }
+    try {
+      return JSON.parse(raw) as User
+    } catch (e) {
+      return null
+    }
+  })
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem('asistente_token'))
 
   const login = async (email: string, password: string) => {
     try {
       const response = await loginRequest(email, password)
       setToken(response.access_token)
       setUser(response.user)
-      // Store the token in localStorage
+      // Store the token and the user so a page refresh keeps the session
       localStorage.setItem('asistente_token', response.access_token)
+      localStorage.setItem('asistente_user', JSON.stringify(response.user))
     } catch (error) {
       if (error instanceof ApiError) {
         throw error
@@ -43,21 +58,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(null)
     setUser(null)
     localStorage.removeItem('asistente_token')
+    localStorage.removeItem('asistente_user')
   }
-
-  // On component mount, check if there's a token in localStorage
-  useEffect(() => {
-    const storedToken = localStorage.getItem('asistente_token')
-    if (storedToken) {
-      setToken(storedToken)
-      // TODO: We could validate the token by making a request to the server
-      // For now, we'll assume it's valid and set the user to a placeholder
-      // In a real app, we would fetch the user info from the token
-      // We'll leave the user as null and rely on the token being present
-      // The dashboard will show the bot_name from the token? Actually, we need the user info.
-      // We'll leave it as null for now and handle it in the dashboard.
-    }
-  }, [])
 
   return (
     <AuthContext.Provider value={{ user, token, login, logout }}>

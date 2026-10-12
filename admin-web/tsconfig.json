@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2020",
-    "useDefineForJavaScript": true,
+    "esModuleInterop": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Node",
@@ -20,10 +20,5 @@
   },
   "include": [
     "src"
-  ],
-  "references": [
-    {
-      "path": "./tsconfig.app.json"
-    }
   ]
 }

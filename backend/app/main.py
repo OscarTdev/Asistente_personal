@@ -11,3 +11,12 @@ app.include_router(ws.router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import sys
+
+    import uvicorn
+
+    loop = "asyncio:SelectorEventLoop" if sys.platform == "win32" else "auto"
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True, loop=loop)

@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLogin } from '../hooks/useLogin'
+import Input from '../components/ui/input'
+import Button from '../components/ui/button'
+import ErrorSlip from '../components/ui/error-slip'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -17,58 +20,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Bienvenido a Asistente Personal
-          </h1>
-          <p className="text-gray-600">
-            Ingresa tus credenciales para acceder al panel
-          </p>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-ground px-4">
+      <div className="w-full max-w-sm">
+        {/* The hotel letterhead */}
+        <div className="rounded-t-lg bg-pine px-6 pb-5 pt-7">
+          <div className="text-xl font-bold tracking-[0.24em] text-ground">AURA</div>
+          <div className="mt-1 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-linen-300">
+            Asistente por WhatsApp
+          </div>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
+
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-b-lg border border-t-0 border-linen-200 bg-panel p-6">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="email" className="mb-1 block text-sm font-medium text-ink-soft">
               Correo electrónico
             </label>
-            <input
+            <Input
               id="email"
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChangeValue={setEmail}
+              autoComplete="email"
+              placeholder="admin@tunegocio.com"
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="password" className="mb-1 block text-sm font-medium text-ink-soft">
               Contraseña
             </label>
-            <input
+            <Input
               id="password"
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChangeValue={setPassword}
+              autoComplete="current-password"
+              placeholder="••••••••"
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               disabled={loading}
             />
           </div>
-          {error && (
-            <div className="text-sm text-red-600">
-              {error}
-            </div>
-          )}
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 px-4 rounded-md disabled:opacity-50"
-            disabled={loading}
-          >
+          <ErrorSlip message={error} />
+          <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Ingresando…' : 'Iniciar sesión'}
-          </button>
+          </Button>
         </form>
+
+        <p className="mt-4 text-center text-xs text-linen-600">
+          Panel de administración · {new Date().getFullYear()}
+        </p>
       </div>
     </div>
   )

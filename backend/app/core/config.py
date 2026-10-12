@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     jwt_secret: str                      # SIN default → fail-fast
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
+
+    # LLM: OpenRouter o NVIDIA NIM (interfaz compatible con OpenAI SDK)
+    llm_api_key: str = ""            # vacío → IA deshabilitada (no falla el arranque)
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_model: str = "meta-llama/llama-3.1-70b-instruct"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

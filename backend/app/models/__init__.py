@@ -7,12 +7,15 @@ from .llm_usage import LlmUsage
 from .messages import Message
 from .quote_items import QuoteItem
 from .quotes import Quote
+from .service_usage import ServiceUsage
+from .tenant_modules import TenantModule
 from .tenants import Tenant
 from .users import User
 
 __all__ = [
     "Base",
     "Tenant",
+    "TenantModule",
     "User",
     "Contact",
     "Conversation",
@@ -22,4 +25,5 @@ __all__ = [
     "QuoteItem",
     "Event",
     "LlmUsage",
+    "ServiceUsage",
 ]

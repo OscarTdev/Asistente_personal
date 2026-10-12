@@ -8,10 +8,9 @@ Piensa cada módulo como una habilidad del mismo asistente. Los mejores son los 
 - **Recordatorios y agenda**: "recuérdame llamar al cliente de Laureles el jueves". Es el módulo que más hace volver al usuario.
 - **Contactos y clientes (mini CRM)**: historial de cada cliente, cotizaciones, trabajos y notas. El bot recuerda quién es quién.
 - **Notas por voz y tareas**: el técnico dicta y el bot lo ordena en tareas con fecha.
-- **Resumen diario proactivo**: cada mañana, qué hay agendado, qué cotizaciones esperan respuesta y qué pagos están pendientes. Incluye un briefing de contenido encolado (intake asíncrono: URLs, videos y artículos se procesan en segundo plano, sin bloquear la conversación).
+- **Resumen diario proactivo**: cada mañana, qué hay agendado, qué cotizaciones esperan respuesta y qué pagos están pendientes.
 - **Archivos y documentos**: guardar y buscar PDFs, fotos de obra y facturas ("mándame la cotización de los Restrepo").
-- **Memoria persistente clasificada**: memorias con nivel de importancia, aprendizaje episódico y un ciclo nocturno de consolidación que detecta patrones recurrentes y los promueve a lecciones permanentes. El usuario puede ver y editar lo que el asistente recuerda (nunca una caja negra).
-- **Búsqueda en memoria y documentos**: búsqueda con ranking de relevancia (FTS + pgvector) sobre memorias, notas y archivos guardados.
+- **Memoria**: que el asistente recuerde preferencias y datos recurrentes del usuario.
 
 ## Módulos para oficios (los que más fácil se venden)
 
@@ -30,9 +29,9 @@ Piensa cada módulo como una habilidad del mismo asistente. Los mejores son los 
 
 - **Correo y calendario (Gmail y Google Calendar)**: resumir el correo, proponer horarios, crear eventos. Siempre con confirmación humana antes de enviar algo.
 - **Finanzas personales**: gastos por voz o foto de recibo y resumen mensual.
-- **Búsqueda, investigación y aprendizaje**: precios, fichas técnicas y normativa para el día a día; en modo asistente personal, mandar URLs, videos de YouTube, artículos o podcasts por WhatsApp y recibir un resumen con conocimiento accionable, con investigación profunda (agentes paralelos) cuando el tema lo amerite.
-- **Traducción y redacción**: mensajes a clientes con buen tono, aprendiendo tu estilo a partir de tu propio contenido (corpus).
-- **Razonamiento y crítica**: para decisiones importantes, deliberar desde varias perspectivas (consejo, red team, primeros principios) y mostrar el razonamiento antes de recomendar; también análisis crítico de textos.
+- **Búsqueda y consultas**: precios, fichas técnicas, normativa.
+- **Traducción y redacción**: mensajes a clientes con buen tono.
+
 ## Módulos para poder venderlo
 
 - **Multi-tenant y roles**: cada negocio con sus datos, usuarios y permisos.
@@ -58,7 +57,3 @@ Piensa cada módulo como una habilidad del mismo asistente. Los mejores son los 
 ## Un consejo
 
 No construyas todos. Lanza los módulos 1 a 3 con unos pocos técnicos y mira cuáles usan de verdad antes de seguir. Los módulos que más pesan en una suscripción suelen ser los que recuperan dinero (seguimiento y cobro) y los que generan hábito (recordatorios y resumen diario).
-
-## Nota sobre el roadmap ampliado
-
-Los módulos de memoria persistente, investigación/aprendizaje, intake asíncrono y modos de pensamiento están inspirados en [claudia-os](https://github.com/sergi-rz/claudia-os) (asistente local single-user construido sobre Claude Code). Aquí se adaptan como módulos multi-tenant sobre la misma base del asistente. La prioridad no cambia: primero los módulos 1–3 del negocio (cotizador, seguimiento, recordatorios); estos módulos de asistente personal entran después, sobre la misma infraestructura.

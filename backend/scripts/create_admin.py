@@ -18,6 +18,10 @@ import sys
 import unicodedata
 import uuid
 
+# psycopg async cannot run on Windows' default ProactorEventLoop.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker

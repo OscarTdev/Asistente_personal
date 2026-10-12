@@ -53,7 +53,8 @@ Esta implementación corresponde a la Fase 1 — Esqueleto de punta a punta, tal
    (se le pedirá la contraseña)
 7. Iniciar el backend:
    ```bash
-   uvicorn app.main:app --reload --port 8000 --reload-dir app
+   uvicorn app.main:app --reload --port 8000 --loop asyncio:SelectorEventLoop
+   # o alternativamente: python -m app.main
    ```
 8. En otra terminal, instalar y ejecutar el frontend:
    ```bash
