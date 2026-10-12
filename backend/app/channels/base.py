@@ -9,6 +9,11 @@ class ChannelParseError(Exception):
     pass
 
 
+class SelfMessageIgnored(ChannelParseError):
+    """Mensaje enviado desde el propio número del bot: se acusa recibo y se ignora."""
+    pass
+
+
 class Channel(ABC):
     name: str  # se sobrescribe en la subclase
 
@@ -21,3 +26,9 @@ class Channel(ABC):
     async def send_text(self, to: str, text: str) -> None:
         """Envía un mensaje de texto vía el canal."""
         pass
+
+    async def send_document(
+        self, to: str, file_name: str, content_base64: str, mimetype: str
+    ) -> None:
+        """Envía un documento (ej: PDF de cotización). Las subclases lo implementan."""
+        raise NotImplementedError(f"{self.name} no soporta envío de documentos")

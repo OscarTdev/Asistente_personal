@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { IconLogout, IconPanel, IconPerson, IconPower } from '../ui/icons'
+import { IconLogout, IconPanel, IconPerson, IconPower, IconWifi } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -24,9 +24,13 @@ export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const isAdmin = user?.role === 'admin'
   const botName = user?.bot_name ?? 'Aura'
 
-  const items = NAV_ITEMS
+  const items: NavItem[] = [...NAV_ITEMS]
+  if (isAdmin) {
+    items.push({ to: '/conexion', label: 'Conexión', icon: IconWifi })
+  }
 
   // The brass rail slides to the active section — the one authored motion.
   const itemRefs = useRef<Record<string, HTMLAnchorElement | null>>({})

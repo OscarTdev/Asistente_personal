@@ -1,7 +1,7 @@
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -87,21 +87,29 @@ def require_role(*roles: str):
 
 
 async def get_tenant_by_slug(
-    x_tenant_slug: str = Header(alias="X-Tenant-Slug"),
+    x_tenant_slug: str | None = Header(default=None, alias="X-Tenant-Slug"),
+    tenant: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> Tenant:
     """
-    Get tenant by slug from the X-Tenant-Slug header.
+    Resuelve el tenant del webhook: header X-Tenant-Slug, query ?tenant=,
+    o el tenant por defecto del settings (modo instancia única).
     """
-    result = await db.execute(
-        select(Tenant).where(Tenant.slug == x_tenant_slug)
-    )
-    tenant = result.scalar_one_or_none()
+    slug = x_tenant_slug or tenant
+    if not slug:
+        from app.core.config import get_settings
 
-    if not tenant or not tenant.is_active:
+        slug = get_settings().default_tenant_slug
+
+    result = await db.execute(
+        select(Tenant).where(Tenant.slug == slug)
+    )
+    tenant_row = result.scalar_one_or_none()
+
+    if not tenant_row or not tenant_row.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tenant no encontrado",
         )
 
-    return tenant
+    return tenant_row

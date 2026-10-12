@@ -19,6 +19,8 @@ import {
   QuoteItemUpdatePayload,
   QuotePage,
   QuoteUpdatePayload,
+  WhatsappConnectResult,
+  WhatsappStatus,
 } from '../types'
 
 export class ApiError extends Error {
@@ -258,6 +260,24 @@ export function deactivateContact(id: string): Promise<void> {
 
 export function fetchDashboardStats(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/dashboard/stats')
+}
+
+// ── WhatsApp (conexión) ─────────────────────────────────────────────────────
+
+export function fetchWhatsappStatus(): Promise<WhatsappStatus> {
+  return apiFetch<WhatsappStatus>('/whatsapp/status')
+}
+
+export function connectWhatsapp(): Promise<WhatsappConnectResult> {
+  return apiFetch<WhatsappConnectResult>('/whatsapp/connect', { method: 'POST' })
+}
+
+export function testSendWhatsapp(number: string, text: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>('/whatsapp/test-send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number, text }),
+  })
 }
 
 export async function downloadQuotePdf(quoteId: string): Promise<void> {

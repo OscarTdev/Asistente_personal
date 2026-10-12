@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_model: str = "meta-llama/llama-3.1-70b-instruct"
 
+    # Evolution API (canal WhatsApp)
+    evolution_api_url: str = "http://127.0.0.1:8080"
+    evolution_api_key: str = "aura-evolution-key"
+    evolution_instance: str = "aura"
+    # Tenant por defecto cuando el webhook no trae el header X-Tenant-Slug
+    # (modo instancia única; multi-tenant = una instancia por tenant)
+    default_tenant_slug: str = "personal"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

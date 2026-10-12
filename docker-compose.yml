@@ -30,6 +30,34 @@ services:
       timeout: 5s
       retries: 12
 
+  evolution:
+    image: evoapicloud/evolution-api:latest
+    container_name: asistente_evolution
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-aura-evolution-key}
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://asistente:asistente@postgres:5432/evolution?schema=evolution_api
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/2
+      CACHE_REDIS_PREFIX_KEY: evolution
+      LANGUAGE: es
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    ports:
+      - "8080:8080"
+
 volumes:
   postgres_data:
   redis_data:
+  evolution_instances:
+  evolution_store:

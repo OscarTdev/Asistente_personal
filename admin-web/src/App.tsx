@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ServiciosPage from './pages/ServiciosPage'
 import QuoterWorkspace from './pages/QuoterWorkspace'
+import ConexionPage from './pages/ConexionPage'
 import CatalogPage from './pages/CatalogPage'
 import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
@@ -34,6 +35,7 @@ function App() {
           <Route path="cotizaciones/:id" element={<QuoteDetailPage />} />
         </Route>
         <Route path="/clientes" element={<ClientesPage />} />
+        <Route path="/conexion" element={<ConexionPage />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
         <Route path="/catalog" element={<Navigate to="/servicios/quoter/catalogo" replace />} />

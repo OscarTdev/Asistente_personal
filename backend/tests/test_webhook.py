@@ -100,9 +100,12 @@ async def test_webhook_invalid_payload(
 
 @pytest.mark.asyncio
 async def test_webhook_payload_without_text(
-    client: AsyncClient, tenant: Tenant, webhook_payload: dict
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
 ):
-    """Mensaje sin texto extraíble (audio) → 400 sin crash."""
+    """Fase B: mensaje de audio → 200 aceptado y persistido como audio."""
     webhook_payload["data"]["message"] = {
         "audioMessage": {"url": "https://example.com/audio.ogg"}
     }
@@ -112,8 +115,19 @@ async def test_webhook_payload_without_text(
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
     )
-    assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json()["detail"] == "Payload de webhook inválido"
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["status"] == "ok"
+
+    # El mensaje quedó persistido como audio (los precios no se procesan aquí)
+    from sqlalchemy import select
+
+    from app.models import Message
+
+    rows = (
+        await db_session.execute(select(Message).where(Message.type == "audio"))
+    ).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].direction == "in"
 
 
 @pytest.mark.asyncio

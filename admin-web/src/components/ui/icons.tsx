@@ -129,3 +129,14 @@ export function IconEnter(props: IconProps) {
   )
 }
 
+export function IconWifi(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M5 12.5a10 10 0 0 1 14 0" />
+      <path d="M8.5 15.5a5.5 5.5 0 0 1 7 0" />
+      <path d="M2.5 9.5a14 14 0 0 1 19 0" />
+      <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+

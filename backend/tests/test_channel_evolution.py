@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.channels.base import ChannelParseError
@@ -129,8 +131,8 @@ async def test_parse_missing_message():
 
 
 @pytest.mark.asyncio
-async def test_parse_audio_message_has_no_text():
-    """Audio (sin texto extraíble en F1) → ChannelParseError → 400."""
+async def test_parse_audio_message():
+    """Fase B: el audio se parsea como type "audio" con su URL de media."""
     payload = {
         "event": "messages.upsert",
         "instance": "auratest",
@@ -145,11 +147,131 @@ async def test_parse_audio_message_has_no_text():
         },
     }
 
-    with pytest.raises(ChannelParseError):
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert isinstance(result, IncomingMessage)
+    assert result.message_type == "audio"
+    assert result.media_url == "https://example.com/audio.ogg"
+    assert result.text is None
+
+
+@pytest.mark.asyncio
+async def test_parse_image_message_with_caption():
+    """Imagen con caption → type "image", texto = caption, base64 presente."""
+    payload = {
+        "event": "messages.upsert",
+        "instance": "auratest",
+        "data": {
+            "key": {
+                "id": "3EB0F9B1B5D6C7DB",
+                "remoteJid": "573001234567@s.whatsapp.net",
+                "fromMe": False,
+            },
+            "messageType": "imageMessage",
+            "message": {
+                "imageMessage": {
+                    "url": "https://example.com/img.jpg",
+                    "caption": "Así quedó la instalación",
+                    "base64": "aGVsbG8=",
+                }
+            },
+        },
+    }
+
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert result.message_type == "image"
+    assert result.text == "Así quedó la instalación"
+    assert result.media_url == "https://example.com/img.jpg"
+    assert result.media_base64 == "aGVsbG8="
+
+
+@pytest.mark.asyncio
+async def test_parse_self_message_ignored():
+    """Mensaje escrito desde el propio número del bot → SelfMessageIgnored."""
+    from app.channels.base import SelfMessageIgnored
+
+    payload = {
+        "event": "messages.upsert",
+        "instance": "auratest",
+        "data": {
+            "key": {
+                "id": "3EB0F9B1B5D6C7DC",
+                "remoteJid": "573001234567@s.whatsapp.net",
+                "fromMe": True,
+            },
+            "message": {"conversation": "nota para mí mismo"},
+        },
+    }
+
+    with pytest.raises(SelfMessageIgnored):
         await EvolutionChannel().parse_incoming(payload)
 
 
 @pytest.mark.asyncio
-async def test_send_text_stub():
-    """send_text es un stub que no lanza error."""
-    await EvolutionChannel().send_text(to="573001234567", text="Hola")
+async def test_send_text_calls_evolution(monkeypatch: pytest.MonkeyPatch):
+    """send_text llama a /message/sendText/{instance} con número y texto."""
+    import httpx
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["apikey"] = request.headers.get("apikey")
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"id": "x"}})
+
+    channel = EvolutionChannel()
+    monkeypatch.setattr(
+        channel,
+        "_client",
+        lambda: httpx.AsyncClient(
+            base_url="http://test-evolution:8080",
+            headers={"apikey": "test-key"},
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    await channel.send_text(to="573001234567", text="Hola desde Aura")
+
+    assert "/message/sendText/" in captured["url"]
+    assert captured["url"].endswith("/instance") or "aura" in captured["url"]
+    assert captured["apikey"] == "test-key"
+    assert captured["body"]["number"] == "573001234567"
+    assert captured["body"]["text"] == "Hola desde Aura"
+
+
+@pytest.mark.asyncio
+async def test_send_document_calls_send_media(monkeypatch: pytest.MonkeyPatch):
+    """send_document llama a /message/sendMedia/{instance} con el base64."""
+    import httpx
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, json={"message": {"id": "y"}})
+
+    channel = EvolutionChannel()
+    monkeypatch.setattr(
+        channel,
+        "_client",
+        lambda: httpx.AsyncClient(
+            base_url="http://test-evolution:8080",
+            headers={"apikey": "test-key"},
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    await channel.send_document(
+        to="573001234567",
+        file_name="cotizacion_ab12.pdf",
+        content_base64="cGRm",
+        mimetype="application/pdf",
+    )
+
+    assert "/message/sendMedia/" in captured["url"]
+    assert captured["body"]["mediatype"] == "document"
+    assert captured["body"]["fileName"] == "cotizacion_ab12.pdf"
+    assert captured["body"]["media"] == "cGRm"

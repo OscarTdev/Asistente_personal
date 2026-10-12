@@ -222,3 +222,18 @@ export interface DashboardStats {
   services: ServiceStat[]
   messages_last_7d: number
 }
+
+// ── WhatsApp (conexión) ─────────────────────────────────────────────────────
+
+export interface WhatsappStatus {
+  state: string
+  instance: string
+}
+
+export interface WhatsappConnectResult {
+  base64?: string
+  code?: string
+  pairingCode?: string
+  qrcode?: { code?: string }
+  instance?: { state?: string }
+}
