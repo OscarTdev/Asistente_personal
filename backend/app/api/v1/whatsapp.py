@@ -1,11 +1,15 @@
-"""Conexión WhatsApp del panel: estado de la instancia, QR y prueba de envío."""
+"""Conexión WhatsApp del panel: estado de la instancia, QR y prueba de envío.
+
+Con UN número compartido entre todos los tenants, conectar/desconectar o
+probar envíos afecta a toda la plataforma: solo el admin de la plataforma.
+"""
 
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, require_platform_admin
 from app.channels import get_channel
 from app.core.config import get_settings
 from app.models import User
@@ -30,7 +34,7 @@ async def connection_status(_current_user: User = Depends(get_current_user)):
 
 
 @router.post("/connect")
-async def connect(_admin: User = Depends(require_role("admin"))):
+async def connect(_admin: User = Depends(require_platform_admin)):
     """Inicia el emparejamiento: devuelve el QR (base64) o el estado actual."""
     channel = get_channel("evolution")
     result = await channel.connect_qr()
@@ -38,7 +42,7 @@ async def connect(_admin: User = Depends(require_role("admin"))):
 
 
 @router.post("/disconnect")
-async def disconnect(_admin: User = Depends(require_role("admin"))):
+async def disconnect(_admin: User = Depends(require_platform_admin)):
     """Cierra la sesión de WhatsApp (logout de la instancia de Evolution)."""
     channel = get_channel("evolution")
     try:
@@ -55,7 +59,7 @@ async def disconnect(_admin: User = Depends(require_role("admin"))):
 @router.post("/test-send")
 async def test_send(
     body: TestSendRequest,
-    _admin: User = Depends(require_role("admin")),
+    _admin: User = Depends(require_platform_admin),
 ):
     """Envía un mensaje de prueba a un número (verificación del canal)."""
     channel = get_channel("evolution")

@@ -117,3 +117,20 @@ async def admin_user(db_session: AsyncSession, tenant: Tenant) -> User:
     await db_session.commit()
     await db_session.refresh(user)
     return user
+
+
+@pytest.fixture
+def webhook_headers(monkeypatch) -> dict[str, str]:
+    """Secreto del webhook para los tests (y el settings parchado que lo valida).
+
+    El webhook de WhatsApp es fail-closed: sin cabecera X-Webhook-Secret
+    correcta responde 401. Este fixture parchea los settings del dep y
+    devuelve la cabecera válida.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.api.deps.get_settings",
+        lambda: SimpleNamespace(webhook_secret="test-webhook-secret"),
+    )
+    return {"X-Webhook-Secret": "test-webhook-secret"}

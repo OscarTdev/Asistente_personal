@@ -16,7 +16,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_tenant_by_slug
+from app.api.deps import get_tenant_by_slug, verify_webhook_secret
 from app.channels import get_channel
 from app.channels.base import ChannelParseError, SelfMessageIgnored
 from app.core.config import get_settings
@@ -39,8 +39,13 @@ async def webhook_whatsapp(
     db: AsyncSession = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
     payload: dict = Body(...),
+    _webhook_auth: None = Depends(verify_webhook_secret),
 ):
-    """Recibe un mensaje de WhatsApp, lo persiste y dispara el cerebro."""
+    """Recibe un mensaje de WhatsApp, lo persiste y dispara el cerebro.
+
+    Fail-closed: sin el secreto compartido (cabecera X-Webhook-Secret
+    configurada en la instancia de Evolution) la puerta no abre.
+    """
     channel = get_channel("evolution")
 
     try:

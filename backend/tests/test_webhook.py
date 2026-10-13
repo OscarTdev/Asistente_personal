@@ -33,10 +33,14 @@ def webhook_payload() -> dict:
 
 @pytest.mark.asyncio
 async def test_webhook_idempotency(
-    client: AsyncClient, tenant: Tenant, db_session, webhook_payload: dict
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
+    webhook_headers: dict,
 ):
     """Dos POST idénticos → ambos 200; UNA fila en messages y UNA en events."""
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
 
     response1 = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
@@ -72,9 +76,11 @@ async def test_webhook_idempotency(
 
 
 @pytest.mark.asyncio
-async def test_webhook_unknown_tenant(client: AsyncClient, webhook_payload: dict):
+async def test_webhook_unknown_tenant(
+    client: AsyncClient, webhook_payload: dict, webhook_headers: dict
+):
     """Slug desconocido → 404 sin filtrar información."""
-    headers = {"X-Tenant-Slug": "nope"}
+    headers = {"X-Tenant-Slug": "nope", **webhook_headers}
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
@@ -85,11 +91,14 @@ async def test_webhook_unknown_tenant(client: AsyncClient, webhook_payload: dict
 
 @pytest.mark.asyncio
 async def test_webhook_invalid_payload(
-    client: AsyncClient, tenant: Tenant, webhook_payload: dict
+    client: AsyncClient,
+    tenant: Tenant,
+    webhook_payload: dict,
+    webhook_headers: dict,
 ):
     """Sin data.key.id → 400 sin crash."""
     webhook_payload["data"]["key"].pop("id")
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
@@ -104,13 +113,14 @@ async def test_webhook_payload_without_text(
     tenant: Tenant,
     db_session,
     webhook_payload: dict,
+    webhook_headers: dict,
 ):
     """Fase B: mensaje de audio → 200 aceptado y persistido como audio."""
     webhook_payload["data"]["message"] = {
         "audioMessage": {"url": "https://example.com/audio.ogg"}
     }
     webhook_payload["data"]["messageType"] = "audioMessage"
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
@@ -136,6 +146,7 @@ async def test_webhook_redis_down(
     tenant: Tenant,
     db_session,
     webhook_payload: dict,
+    webhook_headers: dict,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Redis caído → el POST sigue 200 y el mensaje queda persistido."""
@@ -144,7 +155,7 @@ async def test_webhook_redis_down(
 
     monkeypatch.setattr("app.api.v1.webhooks.publish_event", mock_publish_event)
 
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
     )
@@ -165,13 +176,17 @@ async def test_webhook_redis_down(
 
 @pytest.mark.asyncio
 async def test_webhook_inactive_tenant(
-    client: AsyncClient, tenant: Tenant, db_session, webhook_payload: dict
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
+    webhook_headers: dict,
 ):
     """Tenant inactivo → 404 igual que slug desconocido."""
     tenant.is_active = False
     await db_session.commit()
 
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
     )
@@ -181,14 +196,18 @@ async def test_webhook_inactive_tenant(
 
 @pytest.mark.asyncio
 async def test_webhook_event_payload_message_id(
-    client: AsyncClient, tenant: Tenant, db_session, webhook_payload: dict
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
+    webhook_headers: dict,
 ):
     """El evento persistido en BD lleva el id del mensaje (no None).
 
     Regresión: mutar event.payload in place no dispara UPDATE en JSONB
     sin MutableDict → la BD guardaba message_id=None.
     """
-    headers = {"X-Tenant-Slug": tenant.slug}
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
     response = await client.post(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
     )
@@ -199,3 +218,54 @@ async def test_webhook_event_payload_message_id(
     ).scalar_one()
     await db_session.refresh(event)  # relectura desde la BD (no el estado en memoria)
     assert event.payload["message_id"] is not None
+
+
+# ── Autenticación del webhook (fail-closed) ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_missing_secret(
+    client: AsyncClient, tenant: Tenant, webhook_payload: dict, webhook_headers: dict
+):
+    """Sin la cabecera X-Webhook-Secret → 401: la puerta no abre."""
+    headers = {"X-Tenant-Slug": tenant.slug}  # sin secreto
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_wrong_secret(
+    client: AsyncClient, tenant: Tenant, webhook_payload: dict, webhook_headers: dict
+):
+    """Secreto incorrecto → 401 (comparación de tiempo constante)."""
+    headers = {
+        "X-Tenant-Slug": tenant.slug,
+        "X-Webhook-Secret": "secreto-equivocado",
+    }
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_webhook_rejects_when_secret_unconfigured(
+    client: AsyncClient,
+    tenant: Tenant,
+    webhook_payload: dict,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Sin WEBHOOK_SECRET en el servidor también es 401: no hay modo abierto."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "app.api.deps.get_settings",
+        lambda: SimpleNamespace(webhook_secret=""),
+    )
+    headers = {"X-Tenant-Slug": tenant.slug, "X-Webhook-Secret": "cualquiera"}
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED

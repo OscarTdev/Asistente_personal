@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[3] / ".env"  # raíz del repo
@@ -19,13 +20,18 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_model: str = "meta-llama/llama-3.1-70b-instruct"
 
-    # Evolution API (canal WhatsApp)
+    # Evolution API (canal WhatsApp) — vacío → el bot no atiende (guard real)
     evolution_api_url: str = "http://127.0.0.1:8080"
-    evolution_api_key: str = "aura-evolution-key"
+    evolution_api_key: str = ""
     evolution_instance: str = "aura"
     # Tenant por defecto cuando el webhook no trae el header X-Tenant-Slug
     # (modo instancia única; multi-tenant = una instancia por tenant)
     default_tenant_slug: str = "personal"
+
+    # Webhook de WhatsApp: secreto compartido con Evolution (fail-closed,
+    # sin él el endpoint responde 401). Se configura como cabecera del
+    # webhook en la instancia de Evolution.
+    webhook_secret: str = ""
 
     # Seguimiento de cotizaciones: días de cada ronda (3 y 7 por defecto)
     followup_days: str = "3,7"
@@ -40,6 +46,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _jwt_secret_strong(cls, value: str) -> str:
+        """Fail-fast: un JWT débil o el texto de ejemplo no arrancan."""
+        if len(value) < 32 or "cambia-esto" in value.lower():
+            raise ValueError(
+                "JWT_SECRET inseguro: usa 32+ caracteres aleatorios "
+                "(no el texto de .env.example)"
+            )
+        return value
 
 
 @lru_cache

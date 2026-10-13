@@ -1,3 +1,4 @@
+import hmac
 from uuid import UUID
 
 import jwt
@@ -6,6 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models import Tenant, User
@@ -84,6 +86,25 @@ def require_role(*roles: str):
             )
         return current_user
     return role_checker
+
+
+async def verify_webhook_secret(
+    x_webhook_secret: str | None = Header(default=None, alias="X-Webhook-Secret"),
+) -> None:
+    """Secreto compartido con Evolution (fail-closed): sin él, el webhook es 401.
+
+    Cualquiera que alcance la URL podría inyectar mensajes, gastar IA y
+    hacer escribir al bot — por eso no existe modo "sin secretos".
+    """
+    expected = get_settings().webhook_secret
+    if (
+        not expected
+        or x_webhook_secret is None
+        or not hmac.compare_digest(x_webhook_secret, expected)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado"
+        )
 
 
 async def require_platform_admin(

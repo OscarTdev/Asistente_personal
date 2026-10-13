@@ -456,6 +456,7 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
     db_session: AsyncSession,
     tenant: Tenant,
     tenant2: Tenant,
+    webhook_headers: dict,
 ):
     """Un número compartido: el técnico registrado cae en SU tenant."""
     tenant2.wa_id = "573005551111"
@@ -463,7 +464,8 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        headers={"X-Tenant-Slug": tenant.slug},  # slug del OTRO tenant a propósito
+        # slug del OTRO tenant a propósito: el routing por wa_id gana
+        headers={"X-Tenant-Slug": tenant.slug, **webhook_headers},
         json=_whatsapp_payload("573005551111", "Cotízame 3 tomacorrientes"),
     )
     assert response.status_code == HTTPStatus.OK
@@ -475,12 +477,15 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
 
 
 async def test_whatsapp_unknown_sender_falls_back_to_slug_tenant(
-    client: AsyncClient, db_session: AsyncSession, tenant: Tenant
+    client: AsyncClient,
+    db_session: AsyncSession,
+    tenant: Tenant,
+    webhook_headers: dict,
 ):
     """Número no registrado → behavior original: tenant del slug."""
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        headers={"X-Tenant-Slug": tenant.slug},
+        headers={"X-Tenant-Slug": tenant.slug, **webhook_headers},
         json=_whatsapp_payload("573007778888", "Hola"),
     )
     assert response.status_code == HTTPStatus.OK
