@@ -46,6 +46,8 @@ async def run(
     slug: str,
     email: str,
     password: str,
+    wa_phone: str | None = None,
+    is_platform_admin: bool = False,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
 ) -> dict:
     """Crea (o reutiliza) el tenant y crea el admin. Devuelve ids como dict."""
@@ -55,7 +57,11 @@ async def run(
         tenant = result.scalar_one_or_none()
         if tenant is None:
             tenant = Tenant(
-                id=uuid.uuid4(), name=tenant_name, slug=slug, bot_name=bot_name
+                id=uuid.uuid4(),
+                name=tenant_name,
+                slug=slug,
+                bot_name=bot_name,
+                wa_id=wa_phone,
             )
             session.add(tenant)
             try:
@@ -86,6 +92,7 @@ async def run(
             full_name=None,
             role="admin",
             is_active=True,
+            is_platform_admin=is_platform_admin,
         )
         session.add(user)
         await session.commit()
@@ -116,6 +123,16 @@ def main() -> None:
         default=None,
         help="Contraseña (si se omite, se pide por getpass)",
     )
+    parser.add_argument(
+        "--phone",
+        default=None,
+        help="WhatsApp del dueño (ej. 573001234567): llave de enrutamiento",
+    )
+    parser.add_argument(
+        "--platform-admin",
+        action="store_true",
+        help="Marca el usuario como admin de la plataforma (gestiona todos los tenants)",
+    )
     args = parser.parse_args()
 
     slug = args.slug or slugify(args.tenant_name)
@@ -133,6 +150,8 @@ def main() -> None:
             slug=slug,
             email=args.email,
             password=password,
+            wa_phone=args.phone,
+            is_platform_admin=args.platform_admin,
         )
     )
     print(f"Tenant: {result['tenant_slug']} ({result['tenant_id']})")

@@ -23,3 +23,7 @@ class User(Base, TimestampMixin):
     full_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False, server_default="admin")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # Admin de la plataforma: ve y gestiona TODOS los tenants, no solo el suyo
+    is_platform_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .admin import router as admin_router
 from .auth import router as auth_router
 from .catalog import router as catalog_router
 from .contacts import router as contacts_router
@@ -12,6 +13,7 @@ from .whatsapp import router as whatsapp_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
+api_router.include_router(admin_router, prefix="/admin", tags=["admin"])
 api_router.include_router(modules_router, prefix="/modules", tags=["modules"])
 api_router.include_router(contacts_router, prefix="/contacts", tags=["contacts"])
 api_router.include_router(dashboard_router, prefix="/dashboard", tags=["dashboard"])

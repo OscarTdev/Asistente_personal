@@ -3,11 +3,15 @@
 Responde 200 de inmediato; el cerebro conversacional corre en background.
 Deduplicación idempotente dentro del request. Deuda consciente: sin
 verificación de firma (F1 local-only) — pendiente para producción.
+
+Webhook de pagos de MercadoPago: verifica la firma, responde 200 y procesa
+en background (consulta el pago a la API de MP y aplica el plan del tenant
+que pagó — sin afectar a los demás).
 """
 
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,11 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_tenant_by_slug
 from app.channels import get_channel
 from app.channels.base import ChannelParseError, SelfMessageIgnored
+from app.core.config import get_settings
 from app.core.database import SessionFactory, get_db
 from app.core.redis import get_redis
 from app.models import Contact, Conversation, Message, Tenant
 from app.schemas.webhook import WebhookAck
 from app.services.events import publish_event
+from app.services.mercadopago import PaymentSignatureError, verify_signature
 from app.services.messages import ingest_message
 
 logger = logging.getLogger(__name__)
@@ -106,3 +112,80 @@ async def _run_orchestrator(tenant_id, message_id) -> None:
         logger.exception(
             "El orquestador falló para el mensaje %s del tenant %s", message_id, tenant_id
         )
+
+
+@router.post("/payments/mercadopago")
+async def webhook_mercadopago(
+    background_tasks: BackgroundTasks,
+    request: Request,
+) -> dict:
+    """Notificación de pago de MercadoPago.
+
+    Verifica la firma (HMAC con MERCADOPAGO_WEBHOOK_SECRET), responde 200 de
+    inmediato y procesa en background: consulta el pago a la API de MP y, si
+    está aprobado, activa el plan premium SOLO del tenant que pagó.
+    """
+    settings = get_settings()
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    data = body.get("data") or {}
+    data_id = data.get("id") or request.query_params.get("data.id")
+
+    if not settings.mercadopago_webhook_secret:
+        # Fase manual: sin secreto configurado no hay nada verificable.
+        logger.warning(
+            "Webhook de MercadoPago sin MERCADOPAGO_WEBHOOK_SECRET: ignorado"
+        )
+        return {"status": "ignored"}
+
+    try:
+        verify_signature(
+            secret=settings.mercadopago_webhook_secret,
+            x_signature=request.headers.get("x-signature", ""),
+            x_request_id=request.headers.get("x-request-id"),
+            data_id=str(data_id) if data_id else None,
+        )
+    except PaymentSignatureError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Firma inválida"
+        ) from exc
+
+    if not data_id:
+        # Notificación sin pago (p. ej. ping de configuración de MP)
+        return {"status": "ok"}
+
+    if settings.mercadopago_access_token:
+        background_tasks.add_task(_apply_mercadopago_payment, str(data_id))
+    else:
+        logger.info(
+            "Webhook de MP sin MERCADOPAGO_ACCESS_TOKEN: pago %s queda pendiente "
+            "de la fase 2 (activación manual desde el panel)",
+            data_id,
+        )
+
+    return {"status": "ok"}
+
+
+async def _apply_mercadopago_payment(payment_id: str) -> None:
+    """Consulta el pago a la API de MP y aplica premium al tenant que pagó."""
+    from app.services.mercadopago import process_payment_notification
+
+    settings = get_settings()
+    try:
+        async with SessionFactory() as db:
+            tenant = await process_payment_notification(
+                db,
+                payment_id=payment_id,
+                access_token=settings.mercadopago_access_token,
+            )
+            if tenant is not None:
+                logger.info(
+                    "Suscripción premium activada para '%s' (pago MP %s)",
+                    tenant.slug,
+                    payment_id,
+                )
+    except Exception:
+        logger.exception("Error procesando el pago de MP %s", payment_id)

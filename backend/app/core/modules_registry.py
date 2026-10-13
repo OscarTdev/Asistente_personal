@@ -173,5 +173,40 @@ def module_workspace(key: str) -> str | None:
     return WORKSPACE_ROUTE.get(key)
 
 
+# ── Planes de suscripción ─────────────────────────────────────────────────
+# Qué servicios autoriza cada nivel. Cambiar esto no requiere migración:
+# el plan se aplica con services/entitlements.apply_plan().
+#   trial    → sin método de pago: probar el cotizador
+#   freemium → método de pago registrado, sin suscripción activa
+#   premium  → suscripción activa: todos los servicios
+PLAN_ENTITLEMENTS: dict[str, list[str]] = {
+    "trial": ["quoter"],
+    "freemium": ["quoter", "reminders"],
+    "premium": [m["key"] for m in AVAILABLE_MODULES],
+}
+
+PLAN_LABELS: dict[str, str] = {
+    "trial": "Prueba",
+    "freemium": "Freemium",
+    "premium": "Premium",
+}
+
+PLAN_PRICE_COP: dict[str, int] = {
+    "trial": 0,
+    "freemium": 0,
+    "premium": 29_000,
+}
+
+
+def plan_entitlements(plan: str) -> list[str]:
+    """Servicios incluidos en un plan (desconocido → los del trial)."""
+    return PLAN_ENTITLEMENTS.get(plan, PLAN_ENTITLEMENTS["trial"])
+
+
+def plan_allows(plan: str, module_key: str) -> bool:
+    """¿El plan autoriza este servicio?"""
+    return module_key in plan_entitlements(plan)
+
+
 # Índice rápido por key
 MODULES_BY_KEY: dict[str, ModuleDefinition] = {m["key"]: m for m in AVAILABLE_MODULES}

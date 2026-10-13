@@ -21,6 +21,23 @@ class IngestResult(NamedTuple):
     created: bool
 
 
+async def _resolve_tenant(
+    db: AsyncSession, wa_id: str, fallback: Tenant
+) -> Tenant:
+    """Un número de bot compartido: el remitente identifica al tenant.
+
+    Si quien escribe es un técnico registrado (tenants.wa_id) → SU tenant
+    (su historial, su catálogo, su plan). Si no → el del slug/instancia
+    (comportamiento original: clientes del bot en modo instancia única).
+    """
+    tenant = (
+        await db.execute(
+            select(Tenant).where(Tenant.wa_id == wa_id, Tenant.is_active)
+        )
+    ).scalar_one_or_none()
+    return tenant or fallback
+
+
 async def ingest_message(
     db: AsyncSession,
     tenant: Tenant,
@@ -30,6 +47,8 @@ async def ingest_message(
     """Procesa un mensaje entrante de forma idempotente.
 
     Pasos:
+    0. parse_incoming → si el número que escribe es un técnico registrado,
+       se enruta a SU tenant (número compartido para todos los usuarios).
     1. parse_incoming (ChannelParseError → 400 en el endpoint).
     2. Dedupe por (tenant_id, whatsapp_message_id) → existente → (msg, None, False).
     3. Get-or-create Contact por (tenant_id, wa_id); rellena name si estaba NULL.
@@ -40,6 +59,7 @@ async def ingest_message(
     6. Commit; IntegrityError (carrera del UNIQUE) → rollback + re-consultar.
     """
     incoming = await channel.parse_incoming(payload)
+    tenant = await _resolve_tenant(db, incoming.wa_id, tenant)
 
     # Dedupe por (tenant_id, whatsapp_message_id)
     stmt = (

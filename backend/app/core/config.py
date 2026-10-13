@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Seguimiento de cotizaciones: días de cada ronda (3 y 7 por defecto)
     followup_days: str = "3,7"
 
+    # MercadoPago (fase 2): vacíos → el pago sigue siendo manual desde el panel.
+    # El webhook de pagos responde 200 pero no procesa hasta que existan.
+    mercadopago_access_token: str = ""
+    mercadopago_webhook_secret: str = ""
+    # URL pública del webhook para incluir en las preferencias (fase 2: túnel/dominio)
+    mercadopago_notification_url: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

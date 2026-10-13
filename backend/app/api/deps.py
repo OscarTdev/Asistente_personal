@@ -86,6 +86,18 @@ def require_role(*roles: str):
     return role_checker
 
 
+async def require_platform_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """Solo administradores de la plataforma (gestionan todos los tenants)."""
+    if not current_user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere administrador de la plataforma",
+        )
+    return current_user
+
+
 async def get_tenant_by_slug(
     x_tenant_slug: str | None = Header(default=None, alias="X-Tenant-Slug"),
     tenant: str | None = Query(default=None),

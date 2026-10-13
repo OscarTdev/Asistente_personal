@@ -21,3 +21,10 @@ class Tenant(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    # Plan de suscripción: trial → freemium (método de pago) → premium (pagado)
+    plan: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="trial"
+    )
+    # WhatsApp del dueño (técnico): con UN número de bot compartido, el webhook
+    # identifica quién escribe por este campo y enruta a SU tenant.
+    wa_id: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)

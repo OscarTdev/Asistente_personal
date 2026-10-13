@@ -17,6 +17,7 @@ class UserPublic(BaseModel):
     role: str
     tenant_id: UUID
     bot_name: str
+    is_platform_admin: bool = False
 
 
 class LoginResponse(BaseModel):
