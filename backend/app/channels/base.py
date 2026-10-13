@@ -19,16 +19,24 @@ class Channel(ABC):
 
     @abstractmethod
     async def parse_incoming(self, payload: dict[str, Any]) -> IncomingMessage:
-        """Convierte el payload del canal en un IncomingMessage."""
+        """Convierte el payload del canal en un IncomingMessage.
+
+        NO descarta los mensajes fromMe aquí: la ingesta decide (el auto-chat
+        del dueño es una conversación válida con el asistente).
+        """
         pass
 
     @abstractmethod
-    async def send_text(self, to: str, text: str) -> None:
-        """Envía un mensaje de texto vía el canal."""
+    async def send_text(self, to: str, text: str) -> str | None:
+        """Envía un mensaje de texto vía el canal.
+
+        Devuelve el id del mensaje creado si el canal lo entrega: se usa
+        para deduplicar el eco de nuestros propios envíos en el webhook.
+        """
         pass
 
     async def send_document(
         self, to: str, file_name: str, content_base64: str, mimetype: str
-    ) -> None:
-        """Envía un documento (ej: PDF de cotización). Las subclases lo implementan."""
+    ) -> str | None:
+        """Envía un documento (ej: PDF de cotización). Devuelve el id del mensaje."""
         raise NotImplementedError(f"{self.name} no soporta envío de documentos")

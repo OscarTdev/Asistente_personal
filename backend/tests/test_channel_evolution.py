@@ -187,10 +187,12 @@ async def test_parse_image_message_with_caption():
 
 
 @pytest.mark.asyncio
-async def test_parse_self_message_ignored():
-    """Mensaje escrito desde el propio número del bot → SelfMessageIgnored."""
-    from app.channels.base import SelfMessageIgnored
+async def test_parse_self_message_returns_flag():
+    """fromMe ya no se descarta en el canal: la ingesta decide.
 
+    El auto-chat ("mensaje a ti mismo") del dueño es una conversación
+    válida con su asistente cuando el bot corre en su propio número.
+    """
     payload = {
         "event": "messages.upsert",
         "instance": "auratest",
@@ -204,8 +206,10 @@ async def test_parse_self_message_ignored():
         },
     }
 
-    with pytest.raises(SelfMessageIgnored):
-        await EvolutionChannel().parse_incoming(payload)
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert result.from_me is True
+    assert result.wa_id == "573001234567"
 
 
 @pytest.mark.asyncio

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from app.channels.evolution import EvolutionChannel
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import hash_password
@@ -70,6 +71,31 @@ async def db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     await session.close()
 
 
+class _StubChannel(EvolutionChannel):
+    """EvolutionChannel que parsea real pero NUNCA envía.
+
+    El webhook dispara el orquestador en background; sin esto, un
+    prospecto en un test haría un envío real de WhatsApp. El parseo sí
+    es el de verdad: la ingesta y sus tests dependen de él.
+    """
+
+    name = "stub"
+
+    async def send_text(self, to: str, text: str) -> str | None:
+        return None
+
+    async def send_document(
+        self, to: str, file_name: str, content_base64: str, mimetype: str
+    ) -> str | None:
+        return None
+
+    async def connection_state(self) -> dict:
+        return {"instance": {"state": "offline"}}
+
+    async def connect_qr(self) -> dict:
+        return {"instance": {"state": "offline"}}
+
+
 @pytest.fixture
 async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     """Test client whose get_db dependency uses the test session."""
@@ -77,12 +103,18 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     async def override_get_db():
         yield db_session
 
+    from app.api.v1 import webhooks as webhooks_module
+
+    original_get_channel = webhooks_module.get_channel
+    webhooks_module.get_channel = lambda name="evolution": _StubChannel()
+
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
     app.dependency_overrides.clear()
+    webhooks_module.get_channel = original_get_channel
 
 
 @pytest.fixture

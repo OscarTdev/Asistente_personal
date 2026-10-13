@@ -62,7 +62,10 @@ async def test_webhook_idempotency(
 
     message_count = (
         await db_session.execute(
-            select(func.count()).select_from(Message).where(Message.tenant_id == tenant.id)
+            select(func.count())
+            .select_from(Message)
+            .where(Message.tenant_id == tenant.id)
+            .where(Message.direction == "in")
         )
     ).scalar()
     assert message_count == 1
@@ -167,7 +170,9 @@ async def test_webhook_redis_down(
 
     message = (
         await db_session.execute(
-            select(Message).where(Message.tenant_id == tenant.id)
+            select(Message)
+            .where(Message.tenant_id == tenant.id)
+            .where(Message.direction == "in")
         )
     ).scalar_one_or_none()
     assert message is not None
@@ -269,3 +274,61 @@ async def test_webhook_rejects_when_secret_unconfigured(
         "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
     )
     assert response.status_code == HTTPStatus.UNAUTHORIZED
+
+
+# ── Auto-chat del dueño (el bot corre en su propio número) ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_webhook_self_chat_of_registered_owner(
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
+    webhook_headers: dict,
+):
+    """fromMe + remoteJid = su propio número = el dueño hablándole al bot."""
+    tenant.wa_id = "573001234567"  # el mismo número que trae el payload
+    await db_session.commit()
+    webhook_payload["data"]["key"]["fromMe"] = True
+
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["status"] == "ok"
+
+    message = (
+        await db_session.execute(
+            select(Message).where(Message.direction == "in")
+        )
+    ).scalars().one()
+    assert message.whatsapp_message_id == "3EB0F9B1B5D6C7D8"
+
+
+@pytest.mark.asyncio
+async def test_webhook_owner_manual_reply_ignored(
+    client: AsyncClient,
+    tenant: Tenant,
+    db_session,
+    webhook_payload: dict,
+    webhook_headers: dict,
+):
+    """fromMe a un tercero (respuesta manual del dueño desde su teléfono) → ignorado."""
+    webhook_payload["data"]["key"]["fromMe"] = True
+    # remoteJid del payload (573001234567) NO es el número del dueño
+
+    headers = {"X-Tenant-Slug": tenant.slug, **webhook_headers}
+    response = await client.post(
+        "/api/v1/webhooks/whatsapp", headers=headers, json=webhook_payload
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["status"] == "ignored"
+
+    count = (
+        await db_session.execute(
+            select(func.count()).select_from(Message)
+        )
+    ).scalar_one()
+    assert count == 0

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.channels.base import Channel
+from app.channels.base import Channel, SelfMessageIgnored
 from app.models import Contact, Conversation, Event, Message, Tenant
 
 logger = logging.getLogger(__name__)
@@ -47,19 +47,33 @@ async def ingest_message(
     """Procesa un mensaje entrante de forma idempotente.
 
     Pasos:
-    0. parse_incoming → si el número que escribe es un técnico registrado,
-       se enruta a SU tenant (número compartido para todos los usuarios).
+    0. fromMe: solo el auto-chat del dueño ("mensaje a ti mismo", remoteJid
+       = su propio número = tenants.wa_id) es conversación con el asistente;
+       sus respuestas manuales a terceros se ignoran. De los demás
+       remitentes NO se re-routearía nada: el orquestador decide el rol.
     1. parse_incoming (ChannelParseError → 400 en el endpoint).
-    2. Dedupe por (tenant_id, whatsapp_message_id) → existente → (msg, None, False).
-    3. Get-or-create Contact por (tenant_id, wa_id); rellena name si estaba NULL.
-    4. Get-or-create Conversation (la más reciente del contacto) y actualizar
+    2. Si el remitente no es fromMe y está registrado como dueño de un
+       tenant → se enruta a SU tenant (número compartido).
+    3. Dedupe por (tenant_id, whatsapp_message_id) → existente → (msg, None, False).
+    4. Get-or-create Contact por (tenant_id, wa_id); rellena name si estaba NULL.
+    5. Get-or-create Conversation (la más reciente del contacto) y actualizar
        last_message_at.
-    5. Insert Message (direction="in") y Event "message.received" con payload
+    6. Insert Message (direction="in") y Event "message.received" con payload
        de valores serializables (UUIDs como str).
-    6. Commit; IntegrityError (carrera del UNIQUE) → rollback + re-consultar.
+    7. Commit; IntegrityError (carrera del UNIQUE) → rollback + re-consultar.
     """
     incoming = await channel.parse_incoming(payload)
-    tenant = await _resolve_tenant(db, incoming.wa_id, tenant)
+
+    if incoming.from_me:
+        # Escrito desde el teléfono del dueño. Solo el auto-chat
+        # ("mensaje a ti mismo") es el dueño hablándole a su asistente —
+        # cuando el bot corre en su propio número. Sus respuestas manuales
+        # a terceros (remoteJid ≠ su número) no se ingieren.
+        if not (tenant.wa_id and incoming.wa_id == tenant.wa_id):
+            raise SelfMessageIgnored("Mensaje propio (fromMe) ignorado")
+        # auto-chat: sigue con el tenant del slug, sin re-routear
+    else:
+        tenant = await _resolve_tenant(db, incoming.wa_id, tenant)
 
     # Dedupe por (tenant_id, whatsapp_message_id)
     stmt = (

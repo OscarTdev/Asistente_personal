@@ -10,7 +10,7 @@ from typing import Any
 
 import httpx
 
-from app.channels.base import Channel, ChannelParseError, SelfMessageIgnored
+from app.channels.base import Channel, ChannelParseError
 from app.core.config import get_settings
 from app.schemas.channel import IncomingMessage
 
@@ -43,11 +43,10 @@ class EvolutionChannel(Channel):
             wa_id = key["remoteJid"].split("@", 1)[0]
             push_name = data.get("pushName")
             from_me = bool(key.get("fromMe", False))
-
-            if from_me:
-                # Mensajes salientes escritos a mano desde el teléfono del bot
-                # no se ingesta como conversación del cliente.
-                raise SelfMessageIgnored("Mensaje propio (fromMe) ignorado")
+            # NOTA: los fromMe (escritos desde el teléfono del dueño) NO se
+            # descartan aquí — la ingesta decide. El auto-chat ("mensaje a
+            # ti mismo") es cómo el dueño le habla a su asistente cuando el
+            # bot corre en su propio número.
 
             # Texto: conversation (sin formato) o extendedTextMessage
             extended = message.get("extendedTextMessage") or {}
@@ -97,8 +96,8 @@ class EvolutionChannel(Channel):
             timeout=30,
         )
 
-    async def send_text(self, to: str, text: str) -> None:
-        """Envía texto vía POST /message/sendText/{instance}."""
+    async def send_text(self, to: str, text: str) -> str | None:
+        """Envía texto vía POST /message/sendText/{instance}. Devuelve el id."""
         settings = self._settings()
         async with self._client() as client:
             response = await client.post(
@@ -106,15 +105,22 @@ class EvolutionChannel(Channel):
                 json={"number": to, "text": text},
             )
             response.raise_for_status()
+            data = response.json()
+            message_id = (
+                (data.get("key") or {}).get("id")
+                or (data.get("message") or {}).get("id")
+            )
             logger.debug(
-                "[EvolutionChannel] Texto enviado a %s (instancia %s)",
+                "[EvolutionChannel] Texto enviado a %s (instancia %s, id %s)",
                 to,
                 settings.evolution_instance,
+                message_id,
             )
+            return message_id
 
     async def send_document(
         self, to: str, file_name: str, content_base64: str, mimetype: str
-    ) -> None:
+    ) -> str | None:
         """Envía un documento base64 vía POST /message/sendMedia/{instance}."""
         settings = self._settings()
         async with self._client() as client:
@@ -129,9 +135,18 @@ class EvolutionChannel(Channel):
                 },
             )
             response.raise_for_status()
-            logger.debug(
-                "[EvolutionChannel] Documento %s enviado a %s", file_name, to
+            data = response.json()
+            message_id = (
+                (data.get("key") or {}).get("id")
+                or (data.get("message") or {}).get("id")
             )
+            logger.debug(
+                "[EvolutionChannel] Documento %s enviado a %s (id %s)",
+                file_name,
+                to,
+                message_id,
+            )
+            return message_id
 
     # ── Estado de conexión (usado por el router /whatsapp del panel) ────────
 

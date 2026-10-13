@@ -473,7 +473,9 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
     assert response.status_code == HTTPStatus.OK
 
     message = (
-        await db_session.execute(select(Message))
+        await db_session.execute(
+            select(Message).where(Message.direction == "in")
+        )
     ).scalars().one()
     assert message.tenant_id == tenant2.id
 
@@ -493,7 +495,9 @@ async def test_whatsapp_unknown_sender_falls_back_to_slug_tenant(
     assert response.status_code == HTTPStatus.OK
 
     message = (
-        await db_session.execute(select(Message))
+        await db_session.execute(
+            select(Message).where(Message.direction == "in")
+        )
     ).scalars().one()
     assert message.tenant_id == tenant.id
 

@@ -23,3 +23,6 @@ class Contact(Base, TimestampMixin):
     # False = retirado (soft delete): el contacto deja de aparecer por defecto
     # en el panel, pero su historial se conserva (Ley 1581: no borrar datos).
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # Onboarding conversacional (rol de entrada del bot): estado del registro
+    # de un prospecto — "ask_bot_name", "ask_owner_name:<nombre elegido>", None.
+    onboarding_state: Mapped[str | None] = mapped_column(String(120), nullable=True)
