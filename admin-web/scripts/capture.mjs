@@ -1,13 +1,20 @@
 // One-shot visual verification: login, capture every screen (desktop +
 // mobile) and run a numeric WCAG audit. Uses the system Edge/Chrome so no
 // browser download is needed. Run from admin-web with servers up.
+//
+// QA_EMAIL and QA_PASSWORD come from the environment — NEVER commit them.
 
 import { chromium } from 'playwright'
 
-const R = 'C:/Users/juand/AppData/Local/Temp/opencode/impeccable-review'
-const BASE = 'http://localhost:5173'
-const EMAIL = 'qa.panel.demo@gmail.com'
-const PASSWORD = 'AuraQA2026!'
+const R = process.env.CAPTURE_DIR ?? 'C:/Users/juand/AppData/Local/Temp/opencode/impeccable-review'
+const BASE = process.env.PANEL_URL ?? 'http://localhost:5173'
+const EMAIL = process.env.QA_EMAIL
+const PASSWORD = process.env.QA_PASSWORD
+
+if (!EMAIL || !PASSWORD) {
+  console.error('Faltan QA_EMAIL / QA_PASSWORD en el entorno.')
+  process.exit(1)
+}
 
 const results = {}
 const step = async (key, fn) => {
