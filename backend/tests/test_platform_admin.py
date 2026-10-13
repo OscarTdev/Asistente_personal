@@ -2,8 +2,9 @@
 
 import hashlib
 import hmac
+import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 
 import pytest
@@ -17,6 +18,7 @@ from app.models import (
     Contact,
     Conversation,
     Message,
+    PaymentMethod,
     Subscription,
     Tenant,
     TenantModule,
@@ -544,11 +546,12 @@ async def test_mp_webhook_rejects_bad_signature(
 async def test_mp_webhook_valid_signature_accepted(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ):
-    """Firma válida (sin access token: queda pendiente de la fase 2) → 200 ok."""
+    """Firma válida y fresca (sin access token: queda pendiente de la fase 2) → 200 ok."""
     _mp_settings_stub(monkeypatch, secret="test-secret", token="")
 
+    ts = str(int(time.time()))
     signature = _mp_signature(
-        "test-secret", ts="1234567890", request_id="req-1", data_id="123456"
+        "test-secret", ts=ts, request_id="req-1", data_id="123456"
     )
     response = await client.post(
         "/api/v1/webhooks/payments/mercadopago",
@@ -573,6 +576,9 @@ async def test_mp_payment_updates_only_the_paying_tenant(
         return {
             "status": "approved",
             "external_reference": str(tenant2.id),
+            "transaction_amount": 29000,
+            "currency_id": "COP",
+            "metadata": {"plan": "premium"},
         }
 
     monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
@@ -604,7 +610,13 @@ async def test_mp_payment_not_approved_changes_nothing(
     db_session: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
 ):
     async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
-        return {"status": "pending", "external_reference": str(tenant.id)}
+        return {
+            "status": "pending",
+            "external_reference": str(tenant.id),
+            "transaction_amount": 29000,
+            "currency_id": "COP",
+            "metadata": {"plan": "premium"},
+        }
 
     monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
 
@@ -616,6 +628,255 @@ async def test_mp_payment_not_approved_changes_nothing(
     assert updated is None
     await db_session.refresh(tenant)
     assert tenant.plan == "trial"
+
+
+# ── Pagos: idempotencia, montos, renovación y vencimiento (auditoría A2) ────
+
+
+def _mp_payment(tenant_id, **overrides) -> dict:
+    payment = {
+        "status": "approved",
+        "external_reference": str(tenant_id),
+        "transaction_amount": 29000,
+        "currency_id": "COP",
+        "metadata": {"plan": "premium"},
+    }
+    payment.update(overrides)
+    return payment
+
+
+async def test_mp_duplicate_payment_is_idempotent(
+    db_session: AsyncSession, tenant2: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    """MercadoPago reenvía notificaciones: el mismo pago no se procesa dos veces."""
+    payments = {"mp-dup": _mp_payment(tenant2.id)}
+
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return payments[payment_id]
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+    from app.services.mercadopago import process_payment_notification
+
+    first = await process_payment_notification(
+        db_session, payment_id="mp-dup", access_token="AT"
+    )
+    assert first is not None
+    assert first.plan == "premium"
+
+    # Reenvío de la misma notificación
+    second = await process_payment_notification(
+        db_session, payment_id="mp-dup", access_token="AT"
+    )
+    assert second is not None
+    assert second.id == tenant2.id
+
+    # Una sola fila para ese pago — sin duplicar filas ni extender periodo
+    rows = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.provider == "mercadopago")
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_mp_renewal_extends_from_period_end(
+    db_session: AsyncSession, tenant2: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    """Pagar con periodo vigente extiende DESDE el fin actual, no desde hoy."""
+    payments = {
+        "mp-r1": _mp_payment(tenant2.id),
+        "mp-r2": _mp_payment(tenant2.id),
+    }
+
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return payments[payment_id]
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+    from app.services.mercadopago import process_payment_notification
+
+    await process_payment_notification(
+        db_session, payment_id="mp-r1", access_token="AT"
+    )
+    first_end = (
+        await db_session.execute(
+            select(Subscription)
+            .where(Subscription.tenant_id == tenant2.id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one().current_period_end
+    assert first_end is not None
+
+    await process_payment_notification(
+        db_session, payment_id="mp-r2", access_token="AT"
+    )
+    second_end = (
+        await db_session.execute(
+            select(Subscription)
+            .where(Subscription.tenant_id == tenant2.id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one().current_period_end
+
+    # El nuevo periodo nace del fin del anterior (+30 días), no de hoy
+    assert (second_end - first_end).days >= 29
+
+
+async def test_mp_wrong_amount_changes_nothing(
+    db_session: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    """Nadie compra premium con $1.000 manipulando una preferencia."""
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return _mp_payment(tenant.id, transaction_amount=1000)
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+    from app.services.mercadopago import process_payment_notification
+
+    result = await process_payment_notification(
+        db_session, payment_id="mp-cheap", access_token="AT"
+    )
+    assert result is None
+    await db_session.refresh(tenant)
+    assert tenant.plan == "trial"
+    rows = (
+        await db_session.execute(
+            select(Subscription).where(Subscription.tenant_id == tenant.id)
+        )
+    ).scalars().all()
+    assert rows == []
+
+
+async def test_mp_wrong_currency_rejected(
+    db_session: AsyncSession, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return _mp_payment(tenant.id, currency_id="USD")
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+    from app.services.mercadopago import process_payment_notification
+
+    result = await process_payment_notification(
+        db_session, payment_id="mp-usd", access_token="AT"
+    )
+    assert result is None
+    await db_session.refresh(tenant)
+    assert tenant.plan == "trial"
+
+
+def test_mp_signature_freshness():
+    """Una firma vieja reenviada no vale: ventana temporal de 5 minutos."""
+    from app.services.mercadopago import PaymentSignatureError, verify_signature
+
+    def _sign(data_id: str, ts: str) -> str:
+        manifest = f"id:{data_id};request-id:req-1;ts:{ts};"
+        digest = hmac.new(
+            b"test-secret", manifest.encode(), hashlib.sha256
+        ).hexdigest()
+        return f"ts={ts},v1={digest}"
+
+    # Fresca: pasa
+    fresh_ts = str(int(time.time()))
+    verify_signature(
+        secret="test-secret",
+        x_signature=_sign("123456", fresh_ts),
+        x_request_id="req-1",
+        data_id="123456",
+    )
+
+    # De hace una hora: rechazada
+    old_ts = str(int(time.time()) - 3600)
+    with pytest.raises(PaymentSignatureError):
+        verify_signature(
+            secret="test-secret",
+            x_signature=_sign("123456", old_ts),
+            x_request_id="req-1",
+            data_id="123456",
+        )
+
+
+async def test_expiry_job_downgrades_to_trial_without_method(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Venció y sin método de pago → trial; la fila queda 'past_due'."""
+    await apply_plan(db_session, tenant_id=tenant.id, plan="premium")
+
+    sub = (
+        await db_session.execute(
+            select(Subscription)
+            .where(Subscription.tenant_id == tenant.id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    sub.current_period_end = datetime.now(UTC) - timedelta(hours=1)
+    await db_session.commit()
+
+    from app.services.entitlements import expire_subscriptions
+
+    expired = await expire_subscriptions(db_session)
+    assert expired == 1
+    await db_session.refresh(tenant)
+    assert tenant.plan == "trial"
+
+    statuses = [
+        s.status
+        for s in (
+            await db_session.execute(
+                select(Subscription).where(Subscription.tenant_id == tenant.id)
+            )
+        ).scalars()
+    ]
+    assert "past_due" in statuses
+
+
+async def test_expiry_job_downgrades_to_freemium_with_method(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Venció con método de pago en archivo → freemium."""
+    db_session.add(
+        PaymentMethod(
+            tenant_id=tenant.id,
+            provider="manual",
+            provider_token="tok",
+            brand="Visa",
+            last4="4242",
+        )
+    )
+    await db_session.commit()
+    await apply_plan(db_session, tenant_id=tenant.id, plan="premium")
+
+    sub = (
+        await db_session.execute(
+            select(Subscription)
+            .where(Subscription.tenant_id == tenant.id)
+            .order_by(Subscription.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one()
+    sub.current_period_end = datetime.now(UTC) - timedelta(hours=1)
+    await db_session.commit()
+
+    from app.services.entitlements import expire_subscriptions
+
+    expired = await expire_subscriptions(db_session)
+    assert expired == 1
+    await db_session.refresh(tenant)
+    assert tenant.plan == "freemium"
+
+
+async def test_expiry_job_ignores_active_period(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Periodo vigente → nadie toca al tenant."""
+    await apply_plan(db_session, tenant_id=tenant.id, plan="premium")
+
+    from app.services.entitlements import expire_subscriptions
+
+    expired = await expire_subscriptions(db_session)
+    assert expired == 0
+    await db_session.refresh(tenant)
+    assert tenant.plan == "premium"
 
 
 # ── Link de pago (Checkout Pro) ────────────────────────────────────────────

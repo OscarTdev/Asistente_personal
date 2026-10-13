@@ -16,19 +16,25 @@ la preferencia de checkout desde el panel y conectar credenciales reales.
 import hashlib
 import hmac
 import logging
+import time
+from decimal import Decimal
 from uuid import UUID
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules_registry import PLAN_LABELS, PLAN_PRICE_COP
-from app.models import Tenant
+from app.models import Subscription, Tenant
 from app.services.entitlements import apply_plan
 
 logger = logging.getLogger(__name__)
 
 MP_API_URL = "https://api.mercadopago.com"
+
+# Frescura de la firma: una notificación reenviada horas después no vale
+_SIGNATURE_MAX_AGE_SECONDS = 300
 
 
 class PaymentSignatureError(Exception):
@@ -45,6 +51,8 @@ def verify_signature(
     """Esquema de MercadoPago: x-signature = "ts=<ts>,v1=<hmac>".
 
     v1 = HMAC-SHA256 del manifest "id:{data.id};request-id:{request-id};ts:{ts};"
+    — con el id alfanumérico en minúsculas si aplica — y la notificación debe
+    llegar dentro de la ventana temporal (una firma vieja reenviada no vale).
     """
     parts: dict[str, str] = {}
     for chunk in x_signature.split(","):
@@ -55,12 +63,27 @@ def verify_signature(
     if not ts or not v1:
         raise PaymentSignatureError("x-signature sin ts o v1")
 
-    manifest = f"id:{data_id or ''};request-id:{x_request_id or ''};ts:{ts};"
-    calculated = hmac.new(
-        secret.encode(), manifest.encode(), hashlib.sha256
-    ).hexdigest()
-    if not hmac.compare_digest(calculated, v1):
-        raise PaymentSignatureError("Firma HMAC inválida")
+    try:
+        age = abs(time.time() - float(ts))
+    except ValueError:
+        raise PaymentSignatureError("ts no es numérico") from None
+    if age > _SIGNATURE_MAX_AGE_SECONDS:
+        raise PaymentSignatureError("Notificación fuera de la ventana temporal")
+
+    raw_id = str(data_id) if data_id is not None else ""
+    candidates = [raw_id]
+    if raw_id and raw_id != raw_id.lower():
+        # Ids alfanuméricos: MercadoPago firma el id en minúsculas
+        candidates.append(raw_id.lower())
+
+    for candidate in candidates:
+        manifest = f"id:{candidate};request-id:{x_request_id or ''};ts:{ts};"
+        calculated = hmac.new(
+            secret.encode(), manifest.encode(), hashlib.sha256
+        ).hexdigest()
+        if hmac.compare_digest(calculated, v1):
+            return
+    raise PaymentSignatureError("Firma HMAC inválida")
 
 
 async def fetch_payment(*, payment_id: str, access_token: str) -> dict:
@@ -118,7 +141,33 @@ async def create_checkout_link(
 async def process_payment_notification(
     db: AsyncSession, *, payment_id: str, access_token: str
 ) -> Tenant | None:
-    """Aplica el plan premium al tenant del pago aprobado (solo a él)."""
+    """Aplica el plan pagado SOLO al tenant del pago aprobado (idempotente).
+
+    Reglas de negocio (auditoría A2):
+    - Un mismo pago no se procesa dos veces (MercadoPago reenvía notificaciones).
+    - El monto y la moneda deben corresponder al plan: nadie compra premium
+      con $1.000 manipulando una preferencia.
+    - El plan viene en el metadata de la preferencia (no está fijo).
+    """
+    provider_ref = f"mp:{payment_id}"
+
+    # Idempotencia: si este pago ya dejó su fila, no hacer nada
+    already = (
+        await db.execute(
+            select(Subscription).where(
+                Subscription.provider == "mercadopago",
+                Subscription.provider_ref == provider_ref,
+            )
+        )
+    ).scalar_one_or_none()
+    if already is not None:
+        logger.info("Pago MP %s ya procesado: idempotente", payment_id)
+        return (
+            await db.execute(
+                select(Tenant).where(Tenant.id == already.tenant_id)
+            )
+        ).scalar_one_or_none()
+
     payment = await fetch_payment(payment_id=payment_id, access_token=access_token)
 
     if payment.get("status") != "approved":
@@ -147,10 +196,39 @@ async def process_payment_notification(
         logger.warning("Pago MP %s referencia un tenant inexistente", payment_id)
         return None
 
-    return await apply_plan(
-        db,
-        tenant_id=tenant.id,
-        plan="premium",
-        provider="mercadopago",
-        provider_ref=f"mp:{payment_id}",
-    )
+    # Monto, moneda y plan: el contrato del checkout no se negocia aquí
+    plan = (payment.get("metadata") or {}).get("plan") or "premium"
+    expected_price = PLAN_PRICE_COP.get(plan)
+    try:
+        amount = Decimal(str(payment.get("transaction_amount")))
+    except Exception:
+        amount = None
+    currency = payment.get("currency_id")
+
+    if expected_price is None or amount is None or amount != expected_price or currency != "COP":
+        logger.warning(
+            "Pago MP %s rechazado: monto=%s %s, plan=%s (esperado %s COP). "
+            "El tenant %s NO cambia de plan.",
+            payment_id,
+            amount,
+            currency,
+            plan,
+            expected_price,
+            tenant.slug,
+        )
+        return None
+
+    try:
+        return await apply_plan(
+            db,
+            tenant_id=tenant.id,
+            plan=plan,
+            provider="mercadopago",
+            provider_ref=provider_ref,
+        )
+    except IntegrityError:
+        # Carrera: dos notificaciones del mismo pago llegaron a la vez y la
+        # restricción UNIQUE(provider, provider_ref) detuvo la segunda.
+        await db.rollback()
+        logger.info("Pago MP %s ya existía (carrera): idempotente", payment_id)
+        return tenant

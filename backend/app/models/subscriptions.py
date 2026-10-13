@@ -6,7 +6,7 @@ Cada cambio de plan deja una fila; la más reciente define el estado actual.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +16,9 @@ from app.models.base import Base, TimestampMixin
 class Subscription(Base, TimestampMixin):
     __tablename__ = "subscriptions"
     __table_args__ = (
+        # Idempotencia de pagos: un mismo pago (proveedor+referencia) no puede
+        # crear dos filas — MercadoPago reenvía notificaciones.
+        UniqueConstraint("provider", "provider_ref", name="uq_subscriptions_provider_ref"),
         CheckConstraint(
             "plan_key IN ('trial', 'freemium', 'premium')", name="plan_key"
         ),

@@ -34,13 +34,39 @@ async def _followup_loop() -> None:
         await asyncio.sleep(3600)
 
 
+async def _subscriptions_loop() -> None:
+    """Vence suscripciones premium cuyo periodo terminó (ARQ en producción).
+
+    Cada hora revisa los tenants premium: si su suscripción activa ya venció,
+    la fila pasa a 'past_due' y el tenant baja a freemium (o trial si no
+    tiene método de pago en archivo).
+    """
+    import asyncio
+
+    from app.core.database import SessionFactory
+    from app.services.entitlements import expire_subscriptions
+
+    await asyncio.sleep(180)  # arranque en frío
+    while True:
+        try:
+            async with SessionFactory() as db:
+                expired = await expire_subscriptions(db)
+                if expired:
+                    logger.info("Suscripciones vencidas: %d", expired)
+        except Exception:
+            logger.exception("Falló la revisión de suscripciones vencidas")
+        await asyncio.sleep(3600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
 
     task = asyncio.create_task(_followup_loop())
+    subscriptions_task = asyncio.create_task(_subscriptions_loop())
     yield
     task.cancel()
+    subscriptions_task.cancel()
 
 
 app = FastAPI(title="Asistente Personal API", lifespan=lifespan)

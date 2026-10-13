@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.modules_registry import (
@@ -18,7 +18,7 @@ from app.core.modules_registry import (
     PLAN_ENTITLEMENTS,
     plan_entitlements,
 )
-from app.models import Event, Subscription, Tenant, TenantModule
+from app.models import Event, PaymentMethod, Subscription, Tenant, TenantModule
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +77,32 @@ async def apply_plan(
         elif row.is_enabled != should_enable:
             row.is_enabled = should_enable
 
-    # 2) Historial de suscripción: una fila por cambio de plan
+    # 2) Historial de suscripción: una fila por cambio de plan.
+    #    Renovación premium: el periodo se extiende DESDE el fin del periodo
+    #    vigente (no desde hoy) — pagar dos veces no regala días.
     now = datetime.now(UTC)
     is_premium = plan == "premium"
+    period_start = now if is_premium else None
+    period_end = None
+    if is_premium:
+        base = now
+        latest = (
+            await db.execute(
+                select(Subscription)
+                .where(Subscription.tenant_id == tenant_id)
+                .order_by(Subscription.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if (
+            latest is not None
+            and latest.status == "active"
+            and latest.current_period_end is not None
+            and latest.current_period_end > now
+        ):
+            base = latest.current_period_end
+        period_end = base + timedelta(days=SUBSCRIPTION_PERIOD_DAYS)
+
     db.add(
         Subscription(
             tenant_id=tenant_id,
@@ -87,10 +110,8 @@ async def apply_plan(
             status=PLAN_SUBSCRIPTION_STATUS[plan],
             provider=provider,
             provider_ref=provider_ref,
-            current_period_start=now if is_premium else None,
-            current_period_end=(
-                now + timedelta(days=SUBSCRIPTION_PERIOD_DAYS) if is_premium else None
-            ),
+            current_period_start=period_start,
+            current_period_end=period_end,
         )
     )
 
@@ -114,3 +135,56 @@ async def apply_plan(
         len(entitled),
     )
     return tenant
+
+
+async def expire_subscriptions(db: AsyncSession) -> int:
+    """Vence suscripciones premium cuyo periodo terminó.
+
+    La fila de suscripción pasa a 'past_due' y el tenant baja de plan:
+    freemium si tiene método de pago en archivo, trial si no. El evento
+    'tenant.plan_changed' queda en el feed del panel.
+    """
+    now = datetime.now(UTC)
+    tenants = (
+        await db.execute(select(Tenant).where(Tenant.plan == "premium"))
+    ).scalars().all()
+
+    expired = 0
+    for tenant in tenants:
+        latest = (
+            await db.execute(
+                select(Subscription)
+                .where(Subscription.tenant_id == tenant.id)
+                .order_by(Subscription.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if (
+            latest is None
+            or latest.status != "active"
+            or latest.current_period_end is None
+            or latest.current_period_end >= now
+        ):
+            continue
+
+        latest.status = "past_due"
+        await db.commit()
+
+        methods = (
+            await db.execute(
+                select(func.count())
+                .select_from(PaymentMethod)
+                .where(PaymentMethod.tenant_id == tenant.id)
+            )
+        ).scalar_one()
+        target_plan = "freemium" if methods > 0 else "trial"
+
+        await apply_plan(
+            db, tenant_id=tenant.id, plan=target_plan, provider="system"
+        )
+        expired += 1
+        logger.info(
+            "Suscripción del tenant %s vencida → %s", tenant.slug, target_plan
+        )
+
+    return expired
