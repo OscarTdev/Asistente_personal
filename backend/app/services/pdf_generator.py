@@ -7,6 +7,7 @@ Retorna un buffer BytesIO listo para ser servido como StreamingResponse.
 import io
 from decimal import Decimal
 from typing import Any
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
@@ -136,7 +137,7 @@ def generate_quote_pdf(
 
     header_data = [
         [
-            Paragraph(f"<b>{company_name}</b>", title_style),
+            Paragraph(f"<b>{escape(company_name)}</b>", title_style),
             Paragraph(
                 f"<b>COTIZACIÓN</b><br/>"
                 f"<font color='#64748b'>ID: #{str(quote.id)[:8].upper()}</font>",
@@ -144,7 +145,7 @@ def generate_quote_pdf(
             ),
         ],
         [
-            Paragraph(f"Asistente: {bot_name}", subtitle_style),
+            Paragraph(f"Asistente: {escape(bot_name)}", subtitle_style),
             Paragraph(
                 f"Fecha: {date_str}<br/>Válida hasta: {valid_str}",
                 right_sub_style,
@@ -166,20 +167,17 @@ def generate_quote_pdf(
     story.append(HRFlowable(width="100%", thickness=1, color=border_color, spaceAfter=14))
 
     # ── Cliente / Contacto ───────────────────────────────────────────────────
-    client_name = contact.name if contact and contact.name else "Cliente particular"
-    client_phone = contact.phone_number if contact and contact.phone_number else "-"
+    # wa_id (no phone_number): el campo real del modelo Contact.
+    # Todo texto que no escribimos nosotros se escapa (el nombre viene del
+    # pushName de WhatsApp, que controla el cliente).
+    client_name = escape(contact.name) if contact and contact.name else "Cliente particular"
+    client_phone = contact.wa_id if contact and contact.wa_id else "-"
 
     client_data = [
-        [
-            Paragraph("<b>DIRIGIDO A:</b>", h2_style),
-            Paragraph("<b>ESTADO:</b>", h2_style),
-        ],
-        [
-            Paragraph(f"<b>{client_name}</b><br/>Tel: {client_phone}", body_style),
-            Paragraph(f"Estado: <b>{quote.status.upper()}</b>", body_style),
-        ],
+        [Paragraph("<b>DIRIGIDO A:</b>", h2_style)],
+        [Paragraph(f"<b>{client_name}</b><br/>Tel: {client_phone}", body_style)],
     ]
-    client_table = Table(client_data, colWidths=[4.5 * inch, 3.0 * inch])
+    client_table = Table(client_data, colWidths=[7.5 * inch])
     client_table.setStyle(
         TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -206,7 +204,7 @@ def generate_quote_pdf(
         qty_formatted = f"{float(it.quantity):.2f}".rstrip("0").rstrip(".")
         items_rows.append([
             Paragraph(str(idx), body_style),
-            Paragraph(it.description, body_style),
+            Paragraph(escape(it.description), body_style),
             Paragraph(qty_formatted, c_right),
             Paragraph(_format_currency(it.unit_price), p_right),
             Paragraph(_format_currency(it.line_total), t_right),
@@ -254,13 +252,16 @@ def generate_quote_pdf(
     if quote.notes:
         story.append(Paragraph("<b>Notas y Condiciones:</b>", h2_style))
         story.append(Spacer(1, 4))
-        story.append(Paragraph(quote.notes.replace("\n", "<br/>"), body_style))
+        story.append(Paragraph(escape(quote.notes).replace("\n", "<br/>"), body_style))
         story.append(Spacer(1, 16))
 
     # ── Pie de página ─────────────────────────────────────────────────────────
     story.append(Spacer(1, 20))
     story.append(HRFlowable(width="100%", thickness=0.5, color=border_color, spaceAfter=8))
-    footer_text = f"Cotización emitida por {company_name} a través de su Asistente {bot_name}."
+    footer_text = (
+        f"Cotización emitida por {escape(company_name)} a través de "
+        f"su Asistente {escape(bot_name)}."
+    )
     story.append(Paragraph(footer_text, subtitle_style))
 
     doc.build(story)
