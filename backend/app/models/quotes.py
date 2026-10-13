@@ -36,6 +36,7 @@ class Quote(Base, TimestampMixin):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, server_default="0")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

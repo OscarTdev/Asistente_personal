@@ -26,6 +26,35 @@ from app.schemas.quotes import ExtractedItemSuggestion, ExtractResponse
 
 logger = logging.getLogger(__name__)
 
+
+def _escape_like(text: str) -> str:
+    """Escapa los comodines de ILIKE.
+
+    Un '%' o '_' en el texto de la IA (o del cliente) no puede casar con
+    todo el catálogo y robar el precio de otro ítem.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def _match_catalog_item(
+    db: AsyncSession, *, tenant_id: UUID, description: str
+) -> CatalogItem | None:
+    """Busca el ítem del catálogo por nombre parecido (ILIKE escapado).
+
+    Sprint 0: escape de comodines y orden determinista. Sprint 1: pg_trgm
+    con umbral de similitud para tolerar variantes ("30 A" vs "30A").
+    """
+    pattern = f"%{_escape_like(description[:50])}%"
+    result = await db.execute(
+        select(CatalogItem)
+        .where(CatalogItem.tenant_id == tenant_id)
+        .where(CatalogItem.is_active.is_(True))
+        .where(CatalogItem.name.ilike(pattern))
+        .order_by(CatalogItem.name)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
 _SYSTEM_PROMPT = """Eres un asistente técnico especializado en extracción de información.
 Tu única tarea es leer el texto de un técnico y extraer los materiales
 o servicios mencionados.
@@ -119,15 +148,10 @@ async def extract_items_from_text(
         except Exception:
             qty = Decimal("1")
 
-        # Buscar en catálogo por similitud de nombre (ILIKE)
-        match_result = await db.execute(
-            select(CatalogItem)
-            .where(CatalogItem.tenant_id == tenant_id)
-            .where(CatalogItem.is_active.is_(True))
-            .where(CatalogItem.name.ilike(f"%{desc[:50]}%"))
-            .limit(1)
+        # Buscar en catálogo por similitud de nombre (ILIKE escapado)
+        catalog_match = await _match_catalog_item(
+            db, tenant_id=tenant_id, description=desc
         )
-        catalog_match = match_result.scalar_one_or_none()
 
         suggestions.append(ExtractedItemSuggestion(
             description=desc,

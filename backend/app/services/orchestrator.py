@@ -16,6 +16,7 @@ nota amable si el canal está disponible.
 import base64
 import logging
 import uuid
+from datetime import UTC, datetime
 from uuid import UUID
 
 from openai import AsyncOpenAI
@@ -24,7 +25,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels.base import Channel
 from app.core.config import get_settings
-from app.models import Contact, Conversation, Message, QuoteItem, Tenant, TenantModule
+from app.models import (
+    Contact,
+    Conversation,
+    Event,
+    Message,
+    Quote,
+    QuoteItem,
+    Tenant,
+    TenantModule,
+)
 from app.schemas.quotes import QuoteCreate
 from app.services import ai_extraction as ai_service
 from app.services import pdf_generator as pdf_service
@@ -140,15 +150,47 @@ async def handle_incoming(
             db, tenant_id=tenant.id, text=text
         )
 
-        if extraction.suggestions:
+        suggestions = extraction.suggestions
+        # La IA nunca inventa precios: solo cotizamos ítems con match real
+        matched = [s for s in suggestions if s.matched and s.unit_price]
+        unmatched = [s for s in suggestions if not (s.matched and s.unit_price)]
+
+        if unmatched:
+            # Un PDF con ítems a $0 no se le envía a un cliente: el dueño
+            # revisa los precios y responde. Queda registrado en el panel.
+            db.add(
+                Event(
+                    tenant_id=tenant.id,
+                    type="quote.needs_review",
+                    payload={
+                        "items": [s.description for s in unmatched][:10],
+                        "conversation_id": str(conversation.id),
+                    },
+                )
+            )
+            await db.commit()
+            await _send_out_message(
+                db,
+                tenant_id=tenant.id,
+                conversation=conversation,
+                channel=channel,
+                wa_id=wa_id,
+                text=(
+                    "¡Listo! Estoy verificando los precios de tu solicitud "
+                    "y te confirmo el valor en breve. 🙌"
+                ),
+            )
+            return
+
+        if matched:
             items = [
                 {
                     "description": suggestion.description,
-                    "quantity": float(suggestion.quantity),
-                    "unit_price": float(suggestion.unit_price or 0),
+                    "quantity": suggestion.quantity,
+                    "unit_price": suggestion.unit_price,
                     "catalog_item_id": suggestion.catalog_item_id,
                 }
-                for suggestion in extraction.suggestions
+                for suggestion in matched
             ]
             quote = await quotes_service.create_quote(
                 db,
@@ -172,13 +214,15 @@ async def handle_incoming(
                 )
             ).scalars().all()
 
-            pdf_bytes = pdf_service.generate_quote_pdf(
+            pdf_buffer = pdf_service.generate_quote_pdf(
                 quote=quote,
                 items=quote_items,
                 tenant=tenant_orm,
                 contact=contact_orm,
             )
-            pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
+            # El generador devuelve un BytesIO (el endpoint lo sirve como
+            # StreamingResponse): para base64 hay que sacar los bytes.
+            pdf_b64 = base64.b64encode(pdf_buffer.getvalue()).decode("ascii")
 
             await _send_out_message(
                 db,
@@ -197,6 +241,16 @@ async def handle_incoming(
                 pdf_b64,
                 "application/pdf",
             )
+
+            # La cotización fue enviada: que el seguimiento (el módulo que
+            # más dinero recupera) la cobre a los 3 y 7 días.
+            quote_orm = (
+                await db.execute(select(Quote).where(Quote.id == quote.id))
+            ).scalar_one()
+            quote_orm.status = "sent"
+            quote_orm.sent_at = datetime.now(UTC)
+            await db.commit()
+
             await log_service_usage(
                 db,
                 tenant_id=tenant.id,
