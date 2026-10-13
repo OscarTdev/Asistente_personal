@@ -37,6 +37,21 @@ async def connect(_admin: User = Depends(require_role("admin"))):
     return result
 
 
+@router.post("/disconnect")
+async def disconnect(_admin: User = Depends(require_role("admin"))):
+    """Cierra la sesión de WhatsApp (logout de la instancia de Evolution)."""
+    channel = get_channel("evolution")
+    try:
+        result = await channel.disconnect()
+    except Exception as exc:
+        logger.exception("Fallo el logout de la instancia de WhatsApp")
+        raise HTTPException(
+            status_code=502, detail="No se pudo desconectar WhatsApp"
+        ) from exc
+    message = ((result or {}).get("response") or {}).get("message")
+    return {"status": "ok", "detail": message or "Instancia desconectada"}
+
+
 @router.post("/test-send")
 async def test_send(
     body: TestSendRequest,

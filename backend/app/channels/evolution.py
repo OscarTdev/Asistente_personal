@@ -172,3 +172,17 @@ class EvolutionChannel(Channel):
                 )
             response.raise_for_status()
             return response.json()
+
+    async def disconnect(self) -> dict[str, Any]:
+        """Cierra la sesión de WhatsApp (logout de la instancia).
+
+        El número queda desvinculado: para volver a conectar hay que escanear
+        el QR de nuevo (POST /whatsapp/connect).
+        """
+        settings = self._settings()
+        async with self._client() as client:
+            response = await client.delete(
+                f"/instance/logout/{settings.evolution_instance}"
+            )
+            response.raise_for_status()
+            return response.json()

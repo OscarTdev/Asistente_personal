@@ -1,14 +1,19 @@
-// Conexión WhatsApp: estado de la instancia, QR para vincular el número y
-// envío de prueba. Solo administradores.
+// Conexión WhatsApp: estado de la instancia, QR para vincular el número,
+// desconexión de la sesión y envío de prueba. Solo administradores.
 
 import { useState } from 'react'
 import Card from '../components/ui/card'
 import Button from '../components/ui/button'
 import Input from '../components/ui/input'
 import ErrorSlip from '../components/ui/error-slip'
-import { IconWifi } from '../components/ui/icons'
+import { IconPower, IconWifi } from '../components/ui/icons'
 import { useAuth } from '../auth/AuthContext'
-import { useConnectWhatsapp, useTestSendWhatsapp, useWhatsappStatus } from '../hooks/useWhatsapp'
+import {
+  useConnectWhatsapp,
+  useDisconnectWhatsapp,
+  useTestSendWhatsapp,
+  useWhatsappStatus,
+} from '../hooks/useWhatsapp'
 
 function stateLabel(state: string): string {
   switch (state) {
@@ -36,6 +41,7 @@ export default function ConexionPage() {
   const isAdmin = user?.role === 'admin'
   const { data: status } = useWhatsappStatus()
   const connect = useConnectWhatsapp()
+  const disconnect = useDisconnectWhatsapp()
   const testSend = useTestSendWhatsapp()
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -66,6 +72,19 @@ export default function ConexionPage() {
     } else if (result?.pairingCode) {
       setPairingCode(result.pairingCode)
     }
+  }
+
+  const handleDisconnect = () => {
+    if (
+      !window.confirm(
+        '¿Desconectar WhatsApp? El asistente dejará de enviar y recibir mensajes hasta que vincules el número de nuevo.'
+      )
+    ) {
+      return
+    }
+    setQrDataUrl(null)
+    setPairingCode(null)
+    disconnect.mutate()
   }
 
   const handleTestSend = () => {
@@ -100,18 +119,33 @@ export default function ConexionPage() {
               </div>
             </div>
           </div>
-          <Button
-            type="button"
-            onClick={handleConnect}
-            disabled={connect.isLoading || state === 'open'}
-          >
-            <IconWifi className="h-4 w-4" />
-            {state === 'open' ? 'Conectado' : connect.isLoading ? 'Generando QR…' : 'Vincular número'}
-          </Button>
+          <div className="flex items-center gap-2">
+            {(state === 'open' || state === 'connecting') && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDisconnect}
+                disabled={disconnect.isLoading}
+                className="border-lacre/40 text-lacre hover:bg-lacre-wash"
+              >
+                <IconPower className="h-4 w-4" />
+                {disconnect.isLoading ? 'Desconectando…' : 'Desconectar'}
+              </Button>
+            )}
+            <Button
+              type="button"
+              onClick={handleConnect}
+              disabled={connect.isLoading || state === 'open'}
+            >
+              <IconWifi className="h-4 w-4" />
+              {state === 'open' ? 'Conectado' : connect.isLoading ? 'Generando QR…' : 'Vincular número'}
+            </Button>
+          </div>
         </div>
-        {connect.error && (
-          <div className="mt-3">
-            <ErrorSlip message={connect.error.message} />
+        {(connect.error || disconnect.error) && (
+          <div className="mt-3 space-y-2">
+            {connect.error && <ErrorSlip message={connect.error.message} />}
+            {disconnect.error && <ErrorSlip message={disconnect.error.message} />}
           </div>
         )}
       </Card>

@@ -274,6 +274,12 @@ export function connectWhatsapp(): Promise<WhatsappConnectResult> {
   return apiFetch<WhatsappConnectResult>('/whatsapp/connect', { method: 'POST' })
 }
 
+export function disconnectWhatsapp(): Promise<{ status: string; detail?: string }> {
+  return apiFetch<{ status: string; detail?: string }>('/whatsapp/disconnect', {
+    method: 'POST',
+  })
+}
+
 export function testSendWhatsapp(number: string, text: string): Promise<{ status: string }> {
   return apiFetch<{ status: string }>('/whatsapp/test-send', {
     method: 'POST',

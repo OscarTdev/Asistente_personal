@@ -9,6 +9,8 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    // ngrok/túneles: sin esto Vite rechaza el host público del túnel.
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

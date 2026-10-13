@@ -275,3 +275,40 @@ async def test_send_document_calls_send_media(monkeypatch: pytest.MonkeyPatch):
     assert captured["body"]["mediatype"] == "document"
     assert captured["body"]["fileName"] == "cotizacion_ab12.pdf"
     assert captured["body"]["media"] == "cGRm"
+
+
+@pytest.mark.asyncio
+async def test_disconnect_calls_logout(monkeypatch: pytest.MonkeyPatch):
+    """disconnect llama a DELETE /instance/logout/{instance}."""
+    import httpx
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "status": "SUCCESS",
+                "error": False,
+                "response": {"message": "Instance logged out"},
+            },
+        )
+
+    channel = EvolutionChannel()
+    monkeypatch.setattr(
+        channel,
+        "_client",
+        lambda: httpx.AsyncClient(
+            base_url="http://test-evolution:8080",
+            headers={"apikey": "test-key"},
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    result = await channel.disconnect()
+
+    assert captured["method"] == "DELETE"
+    assert "/instance/logout/" in captured["url"]
+    assert result["status"] == "SUCCESS"
