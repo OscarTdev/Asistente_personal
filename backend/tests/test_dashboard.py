@@ -1,7 +1,6 @@
 """Tests de las métricas del dashboard del panel."""
 
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http import HTTPStatus
 
 import pytest
@@ -40,7 +39,8 @@ async def test_stats_empty_tenant(client: AsyncClient, auth_headers: dict[str, s
 
     for service in data["services"]:
         expected = DEV_STATUS.get(service["key"], "development")
-        assert service["dev_status"] == expected, f"{service['key']}: {service['dev_status']} != {expected}"
+        msg = f"{service['key']}: {service['dev_status']} != {expected}"
+        assert service["dev_status"] == expected, msg
     assert all(s["interactions"] == 0 for s in data["services"])
 
 
@@ -52,7 +52,7 @@ async def test_stats_count_activity_and_quote_logs_usage(
     tenant,
 ):
     """Actividad real alimenta las métricas; crear cotización registra uso."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     contact = Contact(tenant_id=tenant.id, wa_id="573005554443", name="Cliente Uno")
     db_session.add(contact)

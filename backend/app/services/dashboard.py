@@ -1,7 +1,7 @@
 """Métricas del asistente para el panel: clientes, cotizaciones y
 servicios más demandados (interacciones por servicio)."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -19,7 +19,7 @@ from app.schemas.dashboard import (
 
 async def compute_stats(db: AsyncSession, *, tenant_id: UUID, bot_name: str) -> DashboardStats:
     """Agrega todas las métricas del panel en una consulta lógica por grupo."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     week_ago = now - timedelta(days=7)
 
     # ── Clientes ────────────────────────────────────────────────────────────

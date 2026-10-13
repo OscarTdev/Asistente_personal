@@ -1,17 +1,16 @@
 """Router del seguimiento de cotizaciones: pendientes y ejecución manual."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.channels import get_channel
 from app.core.database import get_db
-from app.core.config import get_settings
 from app.models import Contact, FollowUp, Message, Quote, TenantModule, User
 from app.schemas.followup import FollowUpPendingItem, FollowUpPendingPage, FollowUpRunResult
 from app.services.followup import run_followups
@@ -62,7 +61,7 @@ async def pending_quotes(
         .all()
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     items: list[FollowUpPendingItem] = []
     for quote in quotes:
         contact = (

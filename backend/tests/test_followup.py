@@ -1,7 +1,7 @@
 """Tests del motor de seguimiento de cotizaciones."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 
 import pytest
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.channels.base import Channel
 from app.core.security import create_access_token
 from app.models import Contact, Conversation, Message, Quote, TenantModule, User
-from app.schemas.channel import IncomingMessage
 from app.services.followup import run_followups
 
 
@@ -48,7 +47,7 @@ async def _seed_quote(
     contact_name: str = "Cliente Prueba",
     with_reply: bool = False,
 ) -> tuple[Quote, Contact]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     contact = Contact(
         tenant_id=tenant.id,
         wa_id=f"57300{uuid.uuid4().hex[:8]}",
@@ -168,7 +167,7 @@ async def test_round2_at_day7(
     from app.models import FollowUp
 
     quote, contact = await _seed_quote(db_session, tenant, days_ago=8)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db_session.add(
         FollowUp(
             tenant_id=tenant.id,

@@ -5,7 +5,6 @@
 - Configuración vía settings: EVOLUTION_API_URL / API_KEY / INSTANCE.
 """
 
-import base64
 import logging
 from typing import Any
 

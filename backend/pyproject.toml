@@ -8,7 +8,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI: Depends/Body/Query en defaults de endpoints es el patrón del framework
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "fastapi.Header"]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Body", "fastapi.Query", "fastapi.Header", "app.api.deps.require_role"]
 
 [tool.ruff.lint.per-file-ignores]
 # conftest: fija la policy del event loop de Windows ANTES de importar app/* (psycopg async)

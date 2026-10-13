@@ -1,8 +1,7 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
-import logging
 
 from app.api import ws
 from app.api.v1 import api_router
@@ -13,8 +12,6 @@ logger = logging.getLogger(__name__)
 async def _followup_loop() -> None:
     """Seguimiento programado: una ronda por hora (ARQ en producción)."""
     import asyncio
-
-    from sqlalchemy import select
 
     from app.core.database import SessionFactory
     from app.services.followup import run_followups, tenants_with_service

@@ -1,7 +1,7 @@
 """Tests del CRUD de clientes (contactos de WhatsApp) del panel."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from http import HTTPStatus
 
 import pytest
@@ -44,7 +44,7 @@ async def contact_with_history(
         tenant_id=tenant.id,
         contact_id=contact.id,
         status="open",
-        last_message_at=datetime.now(timezone.utc),
+        last_message_at=datetime.now(UTC),
     )
     db_session.add(conversation)
     await db_session.flush()

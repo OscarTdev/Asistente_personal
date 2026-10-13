@@ -15,6 +15,7 @@ nota amable si el canal está disponible.
 
 import base64
 import logging
+import uuid
 from uuid import UUID
 
 from openai import AsyncOpenAI
@@ -187,7 +188,7 @@ async def handle_incoming(
                 wa_id=wa_id,
                 text=(
                     "Lista tu cotización 📄 Te la envío en PDF junto con el detalle. "
-                    f"Quedo pendiente de tu confirmación."
+                    "Quedo pendiente de tu confirmación."
                 ),
             )
             await channel.send_document(

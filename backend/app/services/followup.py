@@ -8,7 +8,8 @@ esta misma pieza (futura migración a ARQ para escala).
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import exists, select
@@ -18,6 +19,9 @@ from app.channels.base import Channel
 from app.core.config import get_settings
 from app.models import Contact, FollowUp, Message, Quote, TenantModule
 from app.services.usage import log_service_usage
+
+if TYPE_CHECKING:
+    from app.schemas.followup import FollowUpRunResult
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +80,7 @@ async def run_followups(
     if channel is None:
         channel = get_channel("evolution")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     day_first, day_second = _parse_round_days(settings.followup_days)
     cutoff_first = now - timedelta(days=day_first)
     cutoff_second = now - timedelta(days=day_second)
