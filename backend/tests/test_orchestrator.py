@@ -552,8 +552,11 @@ async def test_owner_chat_gets_llm_reply(
         async def create(self, **kwargs):
             return fake_response
 
-    class _FakeClient:
+    class _FakeChat:
         completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
 
     monkeypatch.setattr(orchestrator, "AsyncOpenAI", lambda **kwargs: _FakeClient())
 
