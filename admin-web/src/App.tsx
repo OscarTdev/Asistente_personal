@@ -6,6 +6,7 @@ import DashboardPage from './pages/DashboardPage'
 import ServiciosPage from './pages/ServiciosPage'
 import QuoterWorkspace from './pages/QuoterWorkspace'
 import ConexionPage from './pages/ConexionPage'
+import FollowUpPage from './pages/FollowUpPage'
 import CatalogPage from './pages/CatalogPage'
 import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
@@ -33,6 +34,7 @@ function App() {
           <Route path="catalogo" element={<CatalogPage />} />
           <Route path="cotizaciones" element={<QuotesPage />} />
           <Route path="cotizaciones/:id" element={<QuoteDetailPage />} />
+          <Route path="seguimiento" element={<FollowUpPage />} />
         </Route>
         <Route path="/clientes" element={<ClientesPage />} />
         <Route path="/conexion" element={<ConexionPage />} />

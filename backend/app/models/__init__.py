@@ -3,6 +3,7 @@ from .catalog_items import CatalogItem
 from .contacts import Contact
 from .conversations import Conversation
 from .events import Event
+from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
 from .messages import Message
 from .quote_items import QuoteItem
@@ -26,4 +27,5 @@ __all__ = [
     "Event",
     "LlmUsage",
     "ServiceUsage",
+    "FollowUp",
 ]

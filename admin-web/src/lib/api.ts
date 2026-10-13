@@ -10,6 +10,8 @@ import {
   ContactUpdatePayload,
   DashboardStats,
   ExtractResponse,
+  FollowUpPendingPage,
+  FollowUpRunResult,
   LoginResponse,
   Module,
   Quote,
@@ -278,6 +280,21 @@ export function testSendWhatsapp(number: string, text: string): Promise<{ status
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ number, text }),
   })
+}
+
+// ── Seguimiento de cotizaciones ─────────────────────────────────────────────
+
+export function fetchFollowupPending(
+  skip: number = 0,
+  limit: number = 20
+): Promise<FollowUpPendingPage> {
+  return apiFetch<FollowUpPendingPage>(
+    `/followup/pending?skip=${skip}&limit=${limit}`
+  )
+}
+
+export function runFollowupNow(): Promise<FollowUpRunResult> {
+  return apiFetch<FollowUpRunResult>('/followup/run', { method: 'POST' })
 }
 
 export async function downloadQuotePdf(quoteId: string): Promise<void> {

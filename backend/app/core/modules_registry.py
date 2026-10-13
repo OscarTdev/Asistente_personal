@@ -155,7 +155,7 @@ AVAILABLE_MODULES: list[ModuleDefinition] = [
 ]
 
 # Servicios ya construidos; el resto se listan como "En desarrollo"
-DEV_STATUS: dict[str, str] = {"quoter": "active"}
+DEV_STATUS: dict[str, str] = {"quoter": "active", "follow_up": "active"}
 
 # Workspace del panel para servicios activos (ruta relativa bajo /servicios)
 WORKSPACE_ROUTE: dict[str, str] = {"quoter": "/servicios/quoter"}

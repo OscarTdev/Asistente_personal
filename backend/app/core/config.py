@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # (modo instancia única; multi-tenant = una instancia por tenant)
     default_tenant_slug: str = "personal"
 
+    # Seguimiento de cotizaciones: días de cada ronda (3 y 7 por defecto)
+    followup_days: str = "3,7"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

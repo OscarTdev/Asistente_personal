@@ -237,3 +237,28 @@ export interface WhatsappConnectResult {
   qrcode?: { code?: string }
   instance?: { state?: string }
 }
+
+// ── Seguimiento de cotizaciones ─────────────────────────────────────────────
+
+export interface FollowUpPendingItem {
+  quote_id: string
+  contact_name: string | null
+  contact_wa_id: string
+  total: string
+  sent_at: string
+  days_elapsed: number
+  round1_sent_at: string | null
+  round2_sent_at: string | null
+  replied: boolean
+}
+
+export interface FollowUpPendingPage {
+  items: FollowUpPendingItem[]
+  total: number
+}
+
+export interface FollowUpRunResult {
+  round1_sent: number
+  round2_sent: number
+  errors: number
+}

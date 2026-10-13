@@ -7,6 +7,7 @@ import { IconArrowLeft } from '../components/ui/icons'
 const tabs = [
   { to: '/servicios/quoter/catalogo', label: 'Catálogo de precios' },
   { to: '/servicios/quoter/cotizaciones', label: 'Cotizaciones' },
+  { to: '/servicios/quoter/seguimiento', label: 'Seguimiento' },
 ]
 
 export default function QuoterWorkspace() {

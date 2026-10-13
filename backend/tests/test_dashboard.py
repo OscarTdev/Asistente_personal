@@ -36,10 +36,11 @@ async def test_stats_empty_tenant(client: AsyncClient, auth_headers: dict[str, s
     # Todos los servicios del registro aparecen con su estado de desarrollo
     keys = [s["key"] for s in data["services"]]
     assert "quoter" in keys
-    quoter = next(s for s in data["services"] if s["key"] == "quoter")
-    assert quoter["dev_status"] == "active"
-    others = [s for s in data["services"] if s["key"] != "quoter"]
-    assert all(s["dev_status"] == "development" for s in others)
+    from app.core.modules_registry import DEV_STATUS
+
+    for service in data["services"]:
+        expected = DEV_STATUS.get(service["key"], "development")
+        assert service["dev_status"] == expected, f"{service['key']}: {service['dev_status']} != {expected}"
     assert all(s["interactions"] == 0 for s in data["services"])
 
 
