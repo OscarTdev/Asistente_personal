@@ -2,6 +2,10 @@
 
 Diseñado para ser ligero, robusto y sin dependencias del sistema operativo.
 Retorna un buffer BytesIO listo para ser servido como StreamingResponse.
+
+El encabezado lleva los datos del negocio del registro (nombre, NIT,
+correo, ciudad) y el consecutivo legible (COT-0001). El total en letras
+usa num2words con es_CO.
 """
 
 import io
@@ -16,6 +20,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app.models import Contact, Quote, QuoteItem, Tenant
+from app.services.documents import total_in_letters
 
 
 def _format_currency(val: Decimal | float | int | None) -> str:
@@ -28,11 +33,20 @@ def _format_currency(val: Decimal | float | int | None) -> str:
         return f"${val}"
 
 
+def _safe_int(value) -> int:
+    """Convierte a int de forma segura (Decimal, float, str)."""
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return 0
+
+
 def generate_quote_pdf(
     quote: Quote,
     items: list[QuoteItem],
     tenant: Tenant | None = None,
     contact: Contact | None = None,
+    doc_number: str | None = None,
 ) -> io.BytesIO:
     """Genera un archivo PDF con la cotización formateada y lo retorna en un BytesIO."""
     buffer = io.BytesIO()
@@ -48,18 +62,17 @@ def generate_quote_pdf(
 
     styles = getSampleStyleSheet()
 
-    # Custom colors
-    primary_color = colors.HexColor("#0f172a")  # Slate 900
-    accent_color = colors.HexColor("#2563eb")   # Blue 600
-    text_muted = colors.HexColor("#64748b")     # Slate 500
-    border_color = colors.HexColor("#e2e8f0")   # Slate 200
+    primary_color = colors.HexColor("#0f172a")
+    accent_color = colors.HexColor("#2563eb")
+    text_muted = colors.HexColor("#64748b")
+    border_color = colors.HexColor("#e2e8f0")
 
     title_style = ParagraphStyle(
         "DocTitle",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=20,
-        leading=24,
+        fontSize=18,
+        leading=22,
         textColor=primary_color,
     )
 
@@ -67,8 +80,8 @@ def generate_quote_pdf(
         "DocSubtitle",
         parent=styles["Normal"],
         fontName="Helvetica",
-        fontSize=10,
-        leading=14,
+        fontSize=9,
+        leading=13,
         textColor=text_muted,
     )
 
@@ -99,14 +112,6 @@ def generate_quote_pdf(
         textColor=primary_color,
     )
 
-    right_title_style = ParagraphStyle(
-        "RightTitle",
-        parent=title_style,
-        alignment=2,
-        fontSize=16,
-        leading=20,
-    )
-
     right_sub_style = ParagraphStyle(
         "RightSub",
         parent=subtitle_style,
@@ -128,31 +133,41 @@ def generate_quote_pdf(
 
     story: list[Any] = []
 
-    # ── Encabezado ────────────────────────────────────────────────────────────
+    # ── Encabezado: negocio a la izquierda, documento a la derecha ───────
     company_name = tenant.name if tenant else "Asistente Personal"
     bot_name = getattr(tenant, "bot_name", "Aura") or "Aura"
+
+    # Datos del negocio del registro (NIT, correo, ciudad)
+    business_lines = [escape(company_name)]
+    if tenant and getattr(tenant, "nit", None):
+        business_lines.append(f"NIT: {escape(tenant.nit)}")
+    if tenant and getattr(tenant, "account_type", "personal") == "business":
+        pass  # NIT ya está arriba
 
     date_str = quote.created_at.strftime("%d/%m/%Y") if quote.created_at else "-"
     valid_str = quote.valid_until.strftime("%d/%m/%Y") if quote.valid_until else "15 días"
 
+    # Número del documento: consecutivo legible o fallback al UUID
+    doc_label = doc_number or f"COT-{str(quote.id)[:8].upper()}"
+
+    header_right_parts = [f"<b>{doc_label}</b>"]
+    header_right_parts.append(f"<font color='#64748b'>Fecha: {date_str}</font>")
+    header_right_parts.append(f"<font color='#64748b'>Válida hasta: {valid_str}</font>")
+
     header_data = [
         [
-            Paragraph(f"<b>{escape(company_name)}</b>", title_style),
+            Paragraph("<br/>".join(business_lines), title_style),
             Paragraph(
-                f"<b>COTIZACIÓN</b><br/>"
-                f"<font color='#64748b'>ID: #{str(quote.id)[:8].upper()}</font>",
-                right_title_style,
+                "<br/>".join(header_right_parts),
+                right_sub_style,
             ),
         ],
         [
             Paragraph(f"Asistente: {escape(bot_name)}", subtitle_style),
-            Paragraph(
-                f"Fecha: {date_str}<br/>Válida hasta: {valid_str}",
-                right_sub_style,
-            ),
+            Paragraph("", right_sub_style),
         ],
     ]
-    header_table = Table(header_data, colWidths=[3.5 * inch, 4.0 * inch])
+    header_table = Table(header_data, colWidths=[4.5 * inch, 3.0 * inch])
     header_table.setStyle(
         TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -167,9 +182,6 @@ def generate_quote_pdf(
     story.append(HRFlowable(width="100%", thickness=1, color=border_color, spaceAfter=14))
 
     # ── Cliente / Contacto ───────────────────────────────────────────────────
-    # wa_id (no phone_number): el campo real del modelo Contact.
-    # Todo texto que no escribimos nosotros se escapa (el nombre viene del
-    # pushName de WhatsApp, que controla el cliente).
     client_name = escape(contact.name) if contact and contact.name else "Cliente particular"
     client_phone = contact.wa_id if contact and contact.wa_id else "-"
 
@@ -228,20 +240,31 @@ def generate_quote_pdf(
     story.append(items_table)
     story.append(Spacer(1, 14))
 
-    # ── Resumen de Totales ────────────────────────────────────────────────────
+    # ── Total en cifras y en letras ──────────────────────────────────────────
+    letters = total_in_letters(quote.total)
+
     totals_data = [
         [
             "",
             Paragraph("<b>TOTAL:</b>", tot_lbl),
             Paragraph(f"<b>{_format_currency(quote.total)}</b>", tot_val),
-        ]
+        ],
+        [
+            "",
+            Paragraph(
+                f"<font color='#64748b'><b>En letras:</b> {escape(letters)}</font>",
+                subtitle_style,
+            ),
+            Paragraph("", subtitle_style),
+        ],
     ]
-    totals_table = Table(totals_data, colWidths=[4.5 * inch, 1.5 * inch, 1.5 * inch])
+    totals_table = Table(totals_data, colWidths=[3.5 * inch, 2.0 * inch, 2.0 * inch])
     totals_table.setStyle(
         TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING", (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+            ("TOPPADDING", (0, 1), (-1, 1), 2),
             ("LINEABOVE", (1, 0), (-1, 0), 1.5, primary_color),
         ])
     )

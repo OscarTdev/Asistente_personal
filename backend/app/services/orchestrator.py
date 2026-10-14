@@ -352,11 +352,42 @@ async def _handle_quote(
         )
     ).scalars().all()
 
+    # Consecutivo legible (COT-0001) + snapshot inmutable del documento
+    from app.services.documents import create_document
+
+    snapshot = {
+        "tenant_name": tenant_orm.name,
+        "tenant_nit": tenant_orm.nit,
+        "bot_name": tenant_orm.bot_name,
+        "client_name": quote_contact.name if quote_contact else None,
+        "client_wa_id": quote_contact.wa_id if quote_contact else None,
+        "items": [
+            {
+                "description": it.description,
+                "quantity": str(it.quantity),
+                "unit_price": str(it.unit_price),
+                "line_total": str(it.line_total),
+            }
+            for it in quote_items
+        ],
+        "total": str(quote.total),
+        "quote_id": str(quote.id),
+    }
+    document = await create_document(
+        db,
+        tenant_id=tenant.id,
+        doc_type="quote",
+        snapshot=snapshot,
+        quote_id=quote.id,
+    )
+    doc_number = document.number
+
     pdf_buffer = pdf_service.generate_quote_pdf(
         quote=quote,
         items=quote_items,
         tenant=tenant_orm,
         contact=quote_contact,
+        doc_number=doc_number,
     )
     # El generador devuelve un BytesIO (el endpoint lo sirve como
     # StreamingResponse): para base64 hay que sacar los bytes.
@@ -366,9 +397,9 @@ async def _handle_quote(
         quote_contact.name if quote_contact and quote_contact.name else "tu cliente"
     )
     await tell_owner(
-        f"📄 Lista tu cotización para {client_label}. Te la dejo en PDF: "
-        "cuando se la envíes, márcala como enviada en el panel y el "
-        "seguimiento hace el resto."
+        f"📄 Lista tu cotización {doc_number} para {client_label}. "
+        "Te la dejo en PDF: cuando se la envíes, márcala como enviada "
+        "en el panel y el seguimiento hace el resto."
     )
     doc_id = await channel.send_document(
         wa_id,

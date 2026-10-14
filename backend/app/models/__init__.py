@@ -4,6 +4,8 @@ from .channel_identity import ChannelIdentity
 from .consent import Consent
 from .contacts import Contact
 from .conversations import Conversation
+from .document import Document
+from .document_counter import DocumentCounter
 from .events import Event
 from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
@@ -14,6 +16,7 @@ from .quote_items import QuoteItem
 from .quotes import Quote
 from .service_usage import ServiceUsage
 from .subscriptions import Subscription
+from .tenant_branding import TenantBranding
 from .tenant_modules import TenantModule
 from .tenants import Tenant
 from .users import User
@@ -38,4 +41,7 @@ __all__ = [
     "ChannelIdentity",
     "Consent",
     "OnboardingSession",
+    "Document",
+    "DocumentCounter",
+    "TenantBranding",
 ]
