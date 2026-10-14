@@ -139,6 +139,28 @@ async def ingest_message(
     )
     db.add(message)
 
+    # Transcribir audios en la ingesta (spec §12): el contenido del
+    # mensaje pasa de None a texto transcrito. El debounce une el lote
+    # como si fuera un mensaje de texto normal.
+    if incoming.message_type == "audio" and incoming.media_base64:
+        from app.services.audio import transcribe_audio_message
+
+        try:
+            transcription = await transcribe_audio_message(incoming.media_base64)
+            if transcription:
+                message.content = transcription
+                logger.debug(
+                    "Audio transcrito para el mensaje %s (%d caracteres)",
+                    incoming.channel_message_id,
+                    len(transcription),
+                )
+        except Exception:
+            logger.warning(
+                "No se pudo transcribir el audio %s; el debounce lo tratará "
+                "como marcador de posición",
+                incoming.channel_message_id,
+            )
+
     # Insert Event (payload serializable: UUIDs como str, psycopg no serializa UUID en JSONB)
     event = Event(
         tenant_id=tenant.id,

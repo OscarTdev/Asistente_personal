@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     # URL pública del webhook para incluir en las preferencias (fase 2: túnel/dominio)
     mercadopago_notification_url: str = ""
 
+    # Audio: STT (transcripción) y TTS (síntesis) — cualquier endpoint
+    # compatible con OpenAI. STT_API_KEY vacío → el bot pide por escrito.
+    stt_api_key: str = ""
+    stt_base_url: str = "https://api.groq.com/openai/v1"
+    stt_model: str = "whisper-large-v3"
+    tts_api_key: str = ""
+    tts_base_url: str = "https://api.openai.com/v1"
+    tts_model: str = "tts-1"
+    tts_voice: str = "alloy"
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

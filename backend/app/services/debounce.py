@@ -61,13 +61,21 @@ def _should_process(
 def _merge_messages(messages: list[Message]) -> str:
     """Une el lote en un solo texto, en orden.
 
-    El contenido sin texto (audios pendientes de transcripción, imágenes)
-    entra como marcador de posición en su posición.
+    Audios: se transcriben antes de unirse (spec §12). Si no hay
+    proveedor STT o falla, entran como marcador de posición.
     """
+    from app.services.audio import transcribe_audio_message
+
     parts: list[str] = []
     for message in messages:
         content = (message.content or "").strip()
-        parts.append(content if content else f"[{message.type}]")
+        if content:
+            parts.append(content)
+        elif message.type == "audio" and getattr(message, "media_base64", None):
+            text = transcribe_audio_message(message.media_base64)
+            parts.append(text if text else "[audio]")
+        else:
+            parts.append(f"[{message.type}]")
     return "\n".join(parts)
 
 
