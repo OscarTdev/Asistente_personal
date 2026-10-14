@@ -417,7 +417,7 @@ async def test_owner_orders_quote_gets_pdf_draft(
             select(Message).where(Message.direction == "out", Message.type == "document")
         )
     ).scalars().one()
-    assert doc_message.content.startswith("cotizacion_")
+    assert doc_message.content.startswith("COT-")
 
 
 async def test_owner_quote_for_named_client(

@@ -17,6 +17,7 @@ import base64
 import logging
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from openai import AsyncOpenAI
@@ -29,9 +30,11 @@ from app.models import (
     ChannelIdentity,
     Contact,
     Conversation,
+    Document,
     Event,
     FollowUp,
     Message,
+    PendingAction,
     Quote,
     QuoteItem,
     Tenant,
@@ -45,6 +48,8 @@ from app.services import onboarding as onboarding_service
 from app.services import pdf_generator as pdf_service
 from app.services import quotes as quotes_service
 from app.services.ai_extraction import _escape_like
+from app.services.documents import get_branding
+from app.services.invoice_pdf import generate_invoice_pdf
 from app.services.usage import log_service_usage
 
 logger = logging.getLogger(__name__)
@@ -255,6 +260,304 @@ async def _handle_send_message(
     logger.info("Mensaje enviado por encargo del dueño (contacto %s)", target.id)
 
 
+async def _handle_confirmation(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    text: str,
+) -> bool:
+    """Procesa una confirmación si hay una acción pendiente.
+
+    Devuelve True si la acción se ejecutó (el orquestador no sigue).
+    """
+    pending = (
+        await db.execute(
+            select(PendingAction)
+            .where(
+                PendingAction.conversation_id == conversation.id,
+                PendingAction.status == "pending",
+            )
+            .order_by(PendingAction.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if pending is None:
+        return False
+
+    lowered = text.lower().strip()
+    yes_words = ("si", "sí", "dale", "ok", "claro", "envía", "envia",
+                 "mánda", "manda", "confirmo", "listo", "seguro", "puedes")
+    no_words = ("no", "después", "despues", "luego", "cancela", "espera", "nuevo")
+
+    if any(word in lowered for word in no_words):
+        pending.status = "cancelled"
+        await db.commit()
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id,
+            text="Entendido, no la envío. Dime si necesitas algo más.",
+        )
+        return True
+
+    if any(word in lowered for word in yes_words):
+        pending.status = "confirmed"
+        await db.commit()
+
+        if pending.action_type == "send_quote":
+            payload = pending.payload
+            quote_id = UUID(payload["quote_id"])
+            contact_id = UUID(payload["contact_id"])
+
+            quote = (
+                await db.execute(select(Quote).where(Quote.id == quote_id))
+            ).scalar_one_or_none()
+            target_contact = (
+                await db.execute(
+                    select(Contact).where(Contact.id == contact_id)
+                )
+            ).scalar_one_or_none()
+            if quote is None or target_contact is None:
+                return False
+
+            tenant_orm = (
+                await db.execute(select(Tenant).where(Tenant.id == tenant.id))
+            ).scalar_one()
+            quote_items = (
+                await db.execute(
+                    select(QuoteItem).where(QuoteItem.quote_id == quote.id)
+                )
+            ).scalars().all()
+            doc = (
+                await db.execute(
+                    select(Document)
+                    .where(Document.quote_id == quote.id)
+                    .order_by(Document.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            doc_number = doc.number if doc else f"COT-{str(quote.id)[:8]}"
+
+            pdf_buffer = pdf_service.generate_quote_pdf(
+                quote=quote, items=quote_items, tenant=tenant_orm,
+                contact=target_contact, doc_number=doc_number,
+            )
+            import base64 as b64mod
+            pdf_b64 = b64mod.b64encode(pdf_buffer.getvalue()).decode("ascii")
+
+            await channel.send_document(
+                target_contact.wa_id,
+                f"{doc_number}.pdf",
+                pdf_b64,
+                "application/pdf",
+            )
+
+            # Registrar en la conversación del CLIENTE
+            target_conv = (
+                await db.execute(
+                    select(Conversation)
+                    .where(Conversation.contact_id == target_contact.id)
+                    .order_by(Conversation.last_message_at.desc().nullslast())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if target_conv is not None:
+                db.add(
+                    Message(
+                        tenant_id=tenant.id,
+                        conversation_id=target_conv.id,
+                        direction="out",
+                        type="document",
+                        content=f"{doc_number}.pdf",
+                        whatsapp_message_id=f"bot-{uuid.uuid4()}",
+                        status="sent",
+                    )
+                )
+
+            # La cotización pasa a 'sent' → el seguimiento la cobra
+            quote.status = "sent"
+            quote.sent_at = datetime.now(UTC)
+            await db.commit()
+
+            await _send_out_message(
+                db, tenant_id=tenant.id, conversation=conversation,
+                channel=channel, wa_id=wa_id,
+                text=(
+                    f"✅ Envié {doc_number} a "
+                    f"{target_contact.name or target_contact.wa_id}. "
+                    "El seguimiento le escribirá a los 3 y 7 días."
+                ),
+            )
+            return True
+
+        if pending.action_type == "send_invoice":
+            payload = pending.payload
+            contact_id = UUID(payload["contact_id"])
+            doc_number = payload.get("doc_number", "CC-0001")
+
+            target_contact = (
+                await db.execute(
+                    select(Contact).where(Contact.id == contact_id)
+                )
+            ).scalar_one_or_none()
+            if target_contact is None:
+                return False
+
+            doc = (
+                await db.execute(
+                    select(Document).where(Document.number == doc_number)
+                )
+            ).scalar_one_or_none()
+            if doc is None:
+                return False
+
+            snapshot = doc.snapshot
+            tenant_orm = (
+                await db.execute(select(Tenant).where(Tenant.id == tenant.id))
+            ).scalar_one()
+
+            pdf_buffer = generate_invoice_pdf(
+                tenant=tenant_orm,
+                contact=target_contact,
+                doc_number=doc_number,
+                description=snapshot.get("description", "Servicios"),
+                amount=Decimal(snapshot.get("amount", "0")),
+                bank_details=snapshot.get("bank_details"),
+            )
+            import base64 as b64mod
+            pdf_b64 = b64mod.b64encode(pdf_buffer.getvalue()).decode("ascii")
+            await channel.send_document(
+                target_contact.wa_id,
+                f"{doc_number}.pdf",
+                pdf_b64,
+                "application/pdf",
+            )
+            await _send_out_message(
+                db, tenant_id=tenant.id, conversation=conversation,
+                channel=channel, wa_id=wa_id,
+                text=f"✅ Envié {doc_number} a {target_contact.name or target_contact.wa_id}.",
+            )
+            return True
+
+    # Ni sí ni no: la acción sigue pendiente
+    await _send_out_message(
+        db, tenant_id=tenant.id, conversation=conversation,
+        channel=channel, wa_id=wa_id,
+        text=(
+            "Tengo una acción pendiente de tu confirmación. "
+            "¿Quieres que la envíe? Responde «sí» o «no»."
+        ),
+    )
+    return True
+
+
+async def _handle_invoice(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Cuenta de cobro: generar PDF y preguntar antes de enviar al cliente."""
+    from decimal import Decimal
+
+    from app.services.documents import create_document
+    from app.services.invoice_pdf import generate_invoice_pdf
+
+    async def tell_owner(text: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=text,
+        )
+
+    # Resolver cliente
+    quote_contact: Contact | None = None
+    if intent.contact_name:
+        matches = await _resolve_contact_by_name(
+            db, tenant_id=tenant.id, name=intent.contact_name
+        )
+        if len(matches) == 1:
+            quote_contact = matches[1] if False else matches[0]
+
+    if intent.amount is None or intent.amount <= 0:
+        await tell_owner("¿De cuánto es la cuenta de cobro? (ej: 500000)")
+        return
+
+    amount = Decimal(str(intent.amount))
+    description = intent.description or "Servicios prestados"
+
+    # Consecutivo + snapshot
+    branding = await get_branding(db, tenant_id=tenant.id)
+    snapshot = {
+        "tenant_name": tenant.name,
+        "tenant_nit": tenant.nit,
+        "client_name": quote_contact.name if quote_contact else None,
+        "amount": str(amount),
+        "description": description,
+        "bank_details": branding.bank_details if branding else None,
+    }
+    document = await create_document(
+        db, tenant_id=tenant.id, doc_type="invoice", snapshot=snapshot,
+    )
+    await db.commit()
+
+    # PDF
+    tenant_orm = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant.id))
+    ).scalar_one()
+    pdf_buffer = generate_invoice_pdf(
+        tenant=tenant_orm,
+        contact=quote_contact,
+        doc_number=document.number,
+        description=description,
+        amount=amount,
+        bank_details=branding.bank_details if branding else None,
+    )
+
+    import base64 as b64mod
+    pdf_b64 = b64mod.b64encode(pdf_buffer.getvalue()).decode("ascii")
+
+    # Enviar al dueño
+    client_label = quote_contact.name if quote_contact else "tu cliente"
+    await tell_owner(
+        f"🧾 Lista la cuenta de cobro {document.number} para {client_label} "
+        f"por {_format_cop(amount)}. Te la dejo en PDF."
+    )
+    await channel.send_document(
+        wa_id, f"{document.number}.pdf", pdf_b64, "application/pdf"
+    )
+
+    # Si hay cliente, preguntar antes de enviar
+    if quote_contact:
+        db.add(
+            PendingAction(
+                tenant_id=tenant.id,
+                conversation_id=conversation.id,
+                action_type="send_invoice",
+                payload={
+                    "document_id": str(document.id),
+                    "contact_id": str(quote_contact.id),
+                    "doc_number": document.number,
+                },
+            )
+        )
+        await db.commit()
+        await tell_owner(
+            f"¿Quieres que le envíe {document.number} a {client_label}?"
+        )
+
+
+def _format_cop(amount: Decimal | float | int) -> str:
+    try:
+        return f"${float(amount):,.0f}".replace(",", ".")
+    except Exception:
+        return f"${amount}"
+
+
 async def _handle_quote(
     db: AsyncSession,
     *,
@@ -396,14 +699,18 @@ async def _handle_quote(
     client_label = (
         quote_contact.name if quote_contact and quote_contact.name else "tu cliente"
     )
-    await tell_owner(
-        f"📄 Lista tu cotización {doc_number} para {client_label}. "
-        "Te la dejo en PDF: cuando se la envíes, márcala como enviada "
-        "en el panel y el seguimiento hace el resto."
-    )
+    if quote_contact:
+        await tell_owner(
+            f"📄 Lista tu cotización {doc_number} para {client_label}. "
+            "Te la dejo en PDF. ¿Quieres que se la envíe?"
+        )
+    else:
+        await tell_owner(
+            f"📄 Lista tu cotización {doc_number}. Te la dejo en PDF."
+        )
     doc_id = await channel.send_document(
         wa_id,
-        f"cotizacion_{str(quote.id)[:8]}.pdf",
+        f"{doc_number}.pdf",
         pdf_b64,
         "application/pdf",
     )
@@ -414,7 +721,7 @@ async def _handle_quote(
             conversation_id=conversation.id,
             direction="out",
             type="document",
-            content=f"cotizacion_{str(quote.id)[:8]}.pdf",
+            content=f"{doc_number}.pdf",
             whatsapp_message_id=doc_id or f"bot-{uuid.uuid4()}",
             status="sent",
         )
@@ -429,6 +736,22 @@ async def _handle_quote(
         contact_id=quote_contact.id if quote_contact else None,
     )
     logger.info("Cotización %s preparada para el dueño", quote.id)
+
+    # Si hay cliente destino: pedir confirmación antes de enviarle (spec §9.1)
+    if quote_contact:
+        db.add(
+            PendingAction(
+                tenant_id=tenant.id,
+                conversation_id=conversation.id,
+                action_type="send_quote",
+                payload={
+                    "quote_id": str(quote.id),
+                    "contact_id": str(quote_contact.id),
+                    "doc_number": doc_number,
+                },
+            )
+        )
+        await db.commit()
 
 
 async def _is_team_member(
@@ -654,6 +977,22 @@ async def handle_incoming(
             return
 
         intent = await assistant_service.detect_intent(tenant=tenant, text=text)
+
+        # ¿Confirmación de una acción pendiente? (spec §9.1: efecto externo
+        # requiere confirmación explícita del dueño)
+        if intent.intention == "confirm" or intent.intention == "invoice":
+            handled = await _handle_confirmation(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, text=text,
+            )
+            if handled:
+                return
+            if intent.intention == "invoice":
+                await _handle_invoice(
+                    db, tenant=tenant, channel=channel,
+                    conversation=conversation, wa_id=wa_id, intent=intent,
+                )
+                return
 
         if intent.intention == "send_message":
             await _handle_send_message(

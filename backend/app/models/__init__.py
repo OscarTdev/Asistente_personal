@@ -12,6 +12,8 @@ from .llm_usage import LlmUsage
 from .messages import Message
 from .onboarding_session import OnboardingSession
 from .payment_method import PaymentMethod
+from .payment_webhook_event import PaymentWebhookEvent
+from .pending_action import PendingAction
 from .quote_items import QuoteItem
 from .quotes import Quote
 from .service_usage import ServiceUsage
@@ -44,4 +46,6 @@ __all__ = [
     "Document",
     "DocumentCounter",
     "TenantBranding",
+    "PendingAction",
+    "PaymentWebhookEvent",
 ]

@@ -24,11 +24,17 @@ INTENCIONES:
   Ejemplos: "mandale un mensaje de buenos dias a juliana", "escribile a Pedro deseandole feliz cumpleaños", "dale un saludo a doña Mary".
 - "quote": el dueño pide armar una cotización de materiales o servicios (solo cotizar, no escribir a nadie).
   Ejemplos: "cotizame 3 tomacorrientes y 20 metros de cable", "cotización para Juliana: dos breakers de 30A".
+- "invoice": el dueño pide generar una CUENTA DE COBRO (para cobrar un trabajo ya hecho).
+  Ejemplos: "cuenta de cobro para Juliana por 500 mil", "generame una cuenta de cobro por la instalación".
+- "confirm": el dueño responde a una pregunta del asistente (SÍ/NO, enviar/no enviar).
+  Ejemplos: "sí envíala", "dale", "ok", "claro", "no", "después", "envíala".
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:
 {{"intention": "send_message", "contact_name": "Juliana", "message_text": "¡Buenos días, Juliana! 🌞 Que tengas un excelente día."}}
 {{"intention": "quote", "contact_name": "Juliana"}}
+{{"intention": "invoice", "contact_name": "Juliana", "amount": 500000, "description": "Instalación de 5 tomacorrientes"}}
+{{"intention": "confirm", "message_text": "sí"}}
 {{"intention": "chat"}}
 
 REGLAS:

@@ -22,7 +22,12 @@ from app.channels.base import ChannelParseError, SelfMessageIgnored
 from app.core.config import get_settings
 from app.core.database import SessionFactory, get_db
 from app.core.redis import get_redis
-from app.models import Contact, Conversation, Message, Tenant
+from app.models import (
+    Contact,
+    Conversation,
+    Message,
+    Tenant,
+)
 from app.schemas.webhook import WebhookAck
 from app.services.events import publish_event
 from app.services.mercadopago import PaymentSignatureError, verify_signature
@@ -206,22 +211,69 @@ async def webhook_mercadopago(
 
 
 async def _apply_mercadopago_payment(payment_id: str) -> None:
-    """Consulta el pago a la API de MP y aplica premium al tenant que pagó."""
+    """Guarda el evento primero (idempotente), procesa después (spec §11)."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models import PaymentWebhookEvent
     from app.services.mercadopago import process_payment_notification
 
     settings = get_settings()
     try:
         async with SessionFactory() as db:
-            tenant = await process_payment_notification(
-                db,
-                payment_id=payment_id,
-                access_token=settings.mercadopago_access_token,
+            # 1) Guardar el evento: idempotencia real — si ya existe,
+            #    la restricción UNIQUE lo bloquea y no se procesa de nuevo
+            event = PaymentWebhookEvent(
+                provider="mercadopago",
+                provider_ref=f"mp:{payment_id}",
+                status="pending",
+                payload={"payment_id": payment_id},
             )
-            if tenant is not None:
-                logger.info(
-                    "Suscripción premium activada para '%s' (pago MP %s)",
-                    tenant.slug,
-                    payment_id,
+            db.add(event)
+            try:
+                await db.flush()
+            except IntegrityError:
+                await db.rollback()
+                logger.info("Evento MP %s ya registrado: idempotente", payment_id)
+                return
+
+            # 2) Procesar: si falla, el evento queda 'failed' para reintentar
+            try:
+                tenant = await process_payment_notification(
+                    db,
+                    payment_id=payment_id,
+                    access_token=settings.mercadopago_access_token,
                 )
+                if tenant is not None:
+                    event.status = "processed"
+                    logger.info(
+                        "Suscripción premium activada para '%s' (pago MP %s)",
+                        tenant.slug,
+                        payment_id,
+                    )
+                else:
+                    # Pago no aprobado o inválido: el evento queda registrado
+                    # para auditoría pero no activa nada
+                    event.status = "processed"
+                    logger.info(
+                        "Pago MP %s procesado sin cambio de plan", payment_id
+                    )
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                # El evento ya se guardó: reintentar en la próxima notificación
+                async with SessionFactory() as retry_db:
+                    retry_event = (
+                        await retry_db.execute(
+                            select(PaymentWebhookEvent).where(
+                                PaymentWebhookEvent.provider_ref == f"mp:{payment_id}"
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if retry_event is not None:
+                        retry_event.status = "failed"
+                        retry_event.attempts += 1
+                        retry_event.last_error = str(exc)[:500]
+                        await retry_db.commit()
+                logger.exception("Error procesando el pago de MP %s", payment_id)
     except Exception:
-        logger.exception("Error procesando el pago de MP %s", payment_id)
+        logger.exception("Error guardando el evento MP %s", payment_id)
