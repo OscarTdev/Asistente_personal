@@ -101,6 +101,28 @@ class OpenAITTS(TTSProvider):
             return response.content
 
 
+class EdgeTTS(TTSProvider):
+    """Síntesis con la voz de Microsoft Edge — 100% gratis, sin API key.
+
+    Usa las voces neuronales de Edge (las mismas del navegador) a través
+    del servicio de Microsoft. Voz colombiana: es-CO-ElenaNeural.
+    """
+
+    def __init__(self, voice: str = "es-CO-SalomeNeural"):
+        self.voice = voice
+
+    async def synthesize(self, text: str) -> bytes:
+        import edge_tts
+
+        cleaned = mask_for_speech(text)
+        communicate = edge_tts.Communicate(cleaned, self.voice)
+        audio_chunks: list[bytes] = []
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_chunks.append(chunk["data"])
+        return b"".join(audio_chunks)
+
+
 def get_stt_provider():
     """Devuelve el proveedor STT configurado o None si no hay API key."""
     from app.core.config import get_settings
@@ -116,18 +138,22 @@ def get_stt_provider():
 
 
 def get_tts_provider():
-    """Devuelve el proveedor TTS configurado o None si no hay API key."""
+    """Devuelve el proveedor TTS configurado o None.
+
+    Prioridad: TTS_API_KEY → EdgeTTS (gratis, sin API key).
+    """
     from app.core.config import get_settings
 
     settings = get_settings()
-    if not settings.tts_api_key:
-        return None
-    return OpenAITTS(
-        api_key=settings.tts_api_key,
-        base_url=settings.tts_base_url,
-        model=settings.tts_model,
-        voice=settings.tts_voice,
-    )
+    if settings.tts_api_key:
+        return OpenAITTS(
+            api_key=settings.tts_api_key,
+            base_url=settings.tts_base_url,
+            model=settings.tts_model,
+            voice=settings.tts_voice,
+        )
+    # Edge TTS: gratis, sin API key — el default
+    return EdgeTTS(voice=settings.tts_voice)
 
 
 async def transcribe_audio_message(media_base64: str, *, language: str = "es") -> str:

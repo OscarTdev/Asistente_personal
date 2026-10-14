@@ -754,6 +754,72 @@ async def _handle_quote(
         await db.commit()
 
 
+async def _send_voice_reply(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    conversation: Conversation,
+    channel: Channel,
+    wa_id: str,
+) -> None:
+    """Envía la última respuesta del bot también como nota de voz (spec §12).
+
+    El texto YA fue enviado por _chat_reply; esto añade la versión hablada.
+    Si la síntesis falla, no revienta nada — el texto ya llegó.
+    """
+    try:
+        from app.services.audio import get_tts_provider
+
+        # Buscar el último mensaje saliente (la respuesta que acabamos de dar)
+        last_out = (
+            await db.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == conversation.id,
+                    Message.direction == "out",
+                    Message.type == "text",
+                )
+                .order_by(Message.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if last_out is None or not last_out.content:
+            return
+
+        provider = get_tts_provider()
+        if provider is None:
+            return
+
+        audio_bytes = await provider.synthesize(last_out.content)
+        if not audio_bytes:
+            return
+
+        import base64 as b64mod
+        audio_b64 = b64mod.b64encode(audio_bytes).decode("ascii")
+        sent_id = await channel.send_document(
+            wa_id,
+            f"respuesta_{uuid.uuid4().hex[:8]}.mp3",
+            audio_b64,
+            "audio/mpeg",
+        )
+        db.add(
+            Message(
+                tenant_id=tenant.id,
+                conversation_id=conversation.id,
+                direction="out",
+                type="audio",
+                content=last_out.content,
+                whatsapp_message_id=sent_id or f"bot-voice-{uuid.uuid4()}",
+                status="sent",
+            )
+        )
+        await db.commit()
+        logger.debug("Respuesta de voz enviada a %s", wa_id)
+    except Exception:
+        # La versión en texto ya llegó: la voz es best-effort
+        logger.exception("No se pudo enviar la respuesta de voz")
+
+
 async def _is_team_member(
     db: AsyncSession, *, tenant: Tenant, contact: Contact
 ) -> bool:
@@ -1028,6 +1094,13 @@ async def handle_incoming(
             system_prompt=_SYSTEM_PROMPT,
             contact_id_for_usage=contact.id,
         )
+        # Si el dueño escribió por audio, responder también con voz
+        # (spec §12: las cifras SIEMPRE van también en texto primero)
+        if message.type == "audio" and text:
+            await _send_voice_reply(
+                db, tenant=tenant, conversation=conversation,
+                channel=channel, wa_id=wa_id,
+            )
     except Exception:
         logger.exception("El orquestador falló atendiendo el mensaje %s", message.id)
         try:
