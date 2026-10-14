@@ -49,11 +49,14 @@ from app.schemas.admin import (
     ModuleToggleRequest,
     PaymentMethodCreate,
     PlanChangeRequest,
+    PlanPriceOut,
+    PlanPriceUpdate,
     TenantAdminDetail,
     TenantAdminSummary,
     TenantUpdateRequest,
     TenantWhatsappUpdate,
 )
+from app.services import plan_prices
 from app.services.entitlements import apply_plan
 from app.services.identity import link_identity
 from app.services.mercadopago import create_checkout_link
@@ -640,10 +643,14 @@ async def create_tenant_checkout_link(
             detail="El cliente no tiene WhatsApp registrado: regístralo primero",
         )
 
+    price = await plan_prices.effective_price(db, "premium") or PLAN_PRICE_COP[
+        "premium"
+    ]
     try:
         preference = await create_checkout_link(
             tenant=tenant,
             plan="premium",
+            price_cop=price,
             access_token=settings.mercadopago_access_token,
             notification_url=settings.mercadopago_notification_url or None,
         )
@@ -669,9 +676,38 @@ async def create_tenant_checkout_link(
         preference_id=preference.get("id"),
         init_point=link,
         plan="premium",
-        price_cop=PLAN_PRICE_COP["premium"],
+        price_cop=price,
         whatsapp_sent=whatsapp_sent,
     )
+
+
+# ── Planes y precios ───────────────────────────────────────────────────────
+
+
+@router.get("/plan-prices", response_model=list[PlanPriceOut])
+async def list_plan_prices(
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[PlanPriceOut]:
+    """Planes con su precio vigente (override del panel o default del código)."""
+    items = await plan_prices.list_plans(db)
+    return [PlanPriceOut.model_validate(item) for item in items]
+
+
+@router.put("/plan-prices/{plan}", response_model=PlanPriceOut)
+async def update_plan_price(
+    plan: str,
+    body: PlanPriceUpdate,
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PlanPriceOut:
+    """Cambia el precio de un plan (COP): rige para links y validación de pagos."""
+    if plan not in PLAN_LABELS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan no encontrado"
+        )
+    item = await plan_prices.set_price(db, plan=plan, price_cop=body.price_cop)
+    return PlanPriceOut.model_validate(item)
 
 
 # ── Historial de chat ──────────────────────────────────────────────────────

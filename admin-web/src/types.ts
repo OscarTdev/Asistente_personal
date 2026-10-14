@@ -5,6 +5,14 @@ export interface User {
   role: string
   tenant_id: string
   bot_name: string
+  is_platform_admin: boolean
+}
+
+export interface PlanPrice {
+  plan: string
+  label: string
+  price_cop: number
+  is_overridden: boolean
 }
 
 export interface LoginResponse {

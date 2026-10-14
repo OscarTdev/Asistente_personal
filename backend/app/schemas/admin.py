@@ -56,6 +56,17 @@ class CheckoutLinkResult(BaseModel):
     whatsapp_sent: bool
 
 
+class PlanPriceOut(BaseModel):
+    plan: str
+    label: str
+    price_cop: int
+    is_overridden: bool
+
+
+class PlanPriceUpdate(BaseModel):
+    price_cop: int = Field(ge=0, le=10_000_000)
+
+
 class ModuleToggleRequest(BaseModel):
     is_enabled: bool
 

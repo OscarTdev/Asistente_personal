@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.modules_registry import PLAN_LABELS, PLAN_PRICE_COP
 from app.models import Subscription, Tenant
 from app.services.entitlements import apply_plan
+from app.services.plan_prices import effective_price
 
 logger = logging.getLogger(__name__)
 
@@ -103,13 +104,17 @@ async def create_checkout_link(
     plan: str,
     access_token: str,
     notification_url: str | None = None,
+    price_cop: int | None = None,
 ) -> dict:
     """Crea la preferencia de Checkout Pro y devuelve el link de pago.
 
     La preferencia lleva external_reference=tenant_id: cuando MercadoPago
     notifique el pago, el webhook sabrá a qué tenant activar el plan. El
     técnico paga en la página de MP — la tarjeta jamás pasa por aquí.
+    El precio cobrado viaja en metadata.plan_price: la validación del pago
+    no depende de cambios de precio hechos después de generar el link.
     """
+    price = price_cop if price_cop is not None else PLAN_PRICE_COP.get(plan, 0)
     preference: dict = {
         "items": [
             {
@@ -119,11 +124,11 @@ async def create_checkout_link(
                 ),
                 "quantity": 1,
                 "currency_id": "COP",
-                "unit_price": PLAN_PRICE_COP.get(plan, 0),
+                "unit_price": price,
             }
         ],
         "external_reference": str(tenant.id),
-        "metadata": {"tenant_id": str(tenant.id), "plan": plan},
+        "metadata": {"tenant_id": str(tenant.id), "plan": plan, "plan_price": price},
     }
     if notification_url:
         preference["notification_url"] = notification_url
@@ -196,9 +201,15 @@ async def process_payment_notification(
         logger.warning("Pago MP %s referencia un tenant inexistente", payment_id)
         return None
 
-    # Monto, moneda y plan: el contrato del checkout no se negocia aquí
-    plan = (payment.get("metadata") or {}).get("plan") or "premium"
-    expected_price = PLAN_PRICE_COP.get(plan)
+    # Monto, moneda y plan: el contrato del checkout no se negocia aquí.
+    # El precio esperado es el cobrado en la preferencia (metadata.plan_price);
+    # preferencias previas a esa columna caen al precio vigente del plan
+    # (override del panel o default del código).
+    metadata = payment.get("metadata") or {}
+    plan = metadata.get("plan") or "premium"
+    expected_price = metadata.get("plan_price")
+    if expected_price is None:
+        expected_price = await effective_price(db, plan)
     try:
         amount = Decimal(str(payment.get("transaction_amount")))
     except Exception:

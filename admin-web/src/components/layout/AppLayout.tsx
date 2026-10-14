@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { IconLogout, IconPanel, IconPerson, IconPower, IconWifi } from '../ui/icons'
+import { IconLogout, IconPanel, IconPerson, IconPower, IconTag, IconWifi } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -30,6 +30,9 @@ export default function AppLayout() {
   const items: NavItem[] = [...NAV_ITEMS]
   if (isAdmin) {
     items.push({ to: '/conexion', label: 'Conexión', icon: IconWifi })
+  }
+  if (user?.is_platform_admin) {
+    items.push({ to: '/admin', label: 'Admin', icon: IconTag })
   }
 
   // The brass rail slides to the active section — the one authored motion.

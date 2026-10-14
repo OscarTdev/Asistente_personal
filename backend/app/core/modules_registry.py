@@ -194,7 +194,7 @@ PLAN_LABELS: dict[str, str] = {
 PLAN_PRICE_COP: dict[str, int] = {
     "trial": 0,
     "freemium": 0,
-    "premium": 29_000,
+    "premium": 19_900,
 }
 
 

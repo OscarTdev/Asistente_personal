@@ -15,6 +15,7 @@ from .onboarding_session import OnboardingSession
 from .payment_method import PaymentMethod
 from .payment_webhook_event import PaymentWebhookEvent
 from .pending_action import PendingAction
+from .plan_prices import PlanPrice
 from .quote_items import QuoteItem
 from .quotes import Quote
 from .reminder import Reminder
@@ -50,6 +51,7 @@ __all__ = [
     "TenantBranding",
     "PendingAction",
     "PaymentWebhookEvent",
+    "PlanPrice",
     "Note",
     "Reminder",
 ]

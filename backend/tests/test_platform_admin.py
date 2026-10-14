@@ -530,8 +530,15 @@ def _mp_signature(secret: str, *, ts: str, request_id: str, data_id: str) -> str
     return f"ts={ts},v1={digest}"
 
 
-async def test_mp_webhook_without_secret_is_ignored(client: AsyncClient):
-    """Fase manual: sin MERCADOPAGO_WEBHOOK_SECRET la notificación se acusa y sale."""
+async def test_mp_webhook_without_secret_is_ignored(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Fase manual: sin MERCADOPAGO_WEBHOOK_SECRET la notificación se acusa y sale.
+
+    Stub explícito: el test no debe depender de si la máquina de desarrollo
+    tiene credenciales reales en el .env.
+    """
+    _mp_settings_stub(monkeypatch, secret="", token="")
     response = await client.post(
         "/api/v1/webhooks/payments/mercadopago",
         json={"type": "payment", "data": {"id": "123456"}},
@@ -586,7 +593,7 @@ async def test_mp_payment_updates_only_the_paying_tenant(
         return {
             "status": "approved",
             "external_reference": str(tenant2.id),
-            "transaction_amount": 29000,
+            "transaction_amount": 19900,
             "currency_id": "COP",
             "metadata": {"plan": "premium"},
         }
@@ -623,7 +630,7 @@ async def test_mp_payment_not_approved_changes_nothing(
         return {
             "status": "pending",
             "external_reference": str(tenant.id),
-            "transaction_amount": 29000,
+            "transaction_amount": 19900,
             "currency_id": "COP",
             "metadata": {"plan": "premium"},
         }
@@ -647,7 +654,7 @@ def _mp_payment(tenant_id, **overrides) -> dict:
     payment = {
         "status": "approved",
         "external_reference": str(tenant_id),
-        "transaction_amount": 29000,
+        "transaction_amount": 19900,
         "currency_id": "COP",
         "metadata": {"plan": "premium"},
     }
@@ -971,9 +978,17 @@ def _mp_admin_settings(monkeypatch: pytest.MonkeyPatch, token: str = "TEST-AT"):
 
 
 async def test_checkout_link_requires_access_token(
-    client: AsyncClient, platform_admin: User, tenant: Tenant
+    client: AsyncClient,
+    platform_admin: User,
+    tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
 ):
-    """Sin MERCADOPAGO_ACCESS_TOKEN → 503 (fase manual: plan desde el panel)."""
+    """Sin MERCADOPAGO_ACCESS_TOKEN → 503 (fase manual: plan desde el panel).
+
+    Stub explícito: el test no debe depender de si la máquina de desarrollo
+    tiene credenciales reales en el .env.
+    """
+    _mp_admin_settings(monkeypatch, token="")
     response = await client.post(
         f"/api/v1/admin/tenants/{tenant.id}/checkout-link",
         headers=_headers(platform_admin),
@@ -991,10 +1006,11 @@ async def test_checkout_link_created(
     _mp_admin_settings(monkeypatch)
 
     async def fake_create_link(
-        *, tenant, plan, access_token, notification_url=None
+        *, tenant, plan, access_token, price_cop=None, notification_url=None
     ):
         assert plan == "premium"
         assert access_token == "TEST-AT"
+        assert price_cop == 19_900
         assert tenant.id is not None
         return {"id": "pref-123", "init_point": "https://mp.test/pay"}
 
@@ -1010,7 +1026,7 @@ async def test_checkout_link_created(
     data = response.json()
     assert data["init_point"] == "https://mp.test/pay"
     assert data["preference_id"] == "pref-123"
-    assert data["price_cop"] == 29_000
+    assert data["price_cop"] == 19_900
     assert data["whatsapp_sent"] is False
 
 
@@ -1066,3 +1082,133 @@ async def test_checkout_link_whatsapp_requires_registered_number(
         json={"send_to_whatsapp": True},
     )
     assert response.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+# ── Planes y precios (panel de administración) ──────────────────────────────
+
+
+async def test_plan_prices_list_defaults(client: AsyncClient, platform_admin: User):
+    """Sin overrides: los precios vigentes son los defaults del código."""
+    response = await client.get(
+        "/api/v1/admin/plan-prices",
+        headers=_headers(platform_admin),
+    )
+    assert response.status_code == HTTPStatus.OK
+    items = {item["plan"]: item for item in response.json()}
+    assert set(items) == {"trial", "freemium", "premium"}
+    assert items["premium"]["price_cop"] == 19_900
+    assert items["premium"]["is_overridden"] is False
+    assert items["freemium"]["price_cop"] == 0
+
+
+async def test_plan_price_update_and_checkout_uses_it(
+    client: AsyncClient,
+    platform_admin: User,
+    tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """El precio cambiado en el panel rige para los links de pago nuevos."""
+    response = await client.put(
+        "/api/v1/admin/plan-prices/premium",
+        headers=_headers(platform_admin),
+        json={"price_cop": 25_000},
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["price_cop"] == 25_000
+    assert response.json()["is_overridden"] is True
+
+    listing = await client.get(
+        "/api/v1/admin/plan-prices", headers=_headers(platform_admin)
+    )
+    premium = {item["plan"]: item for item in listing.json()}["premium"]
+    assert premium["price_cop"] == 25_000
+    assert premium["is_overridden"] is True
+
+    # El checkout cobra el precio del panel, no el default del código
+    _mp_admin_settings(monkeypatch)
+
+    async def fake_create_link(
+        *, tenant, plan, access_token, price_cop=None, notification_url=None
+    ):
+        assert price_cop == 25_000
+        return {"id": "pref-456", "init_point": "https://mp.test/pay2"}
+
+    monkeypatch.setattr("app.api.v1.admin.create_checkout_link", fake_create_link)
+    checkout = await client.post(
+        f"/api/v1/admin/tenants/{tenant.id}/checkout-link",
+        headers=_headers(platform_admin),
+    )
+    assert checkout.status_code == HTTPStatus.OK
+    assert checkout.json()["price_cop"] == 25_000
+
+
+async def test_mp_payment_validates_against_charged_price(
+    db_session: AsyncSession,
+    tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """El pago se valida contra el precio cobrado en la preferencia."""
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return {
+            "status": "approved",
+            "external_reference": str(tenant.id),
+            "transaction_amount": 25000,
+            "currency_id": "COP",
+            "metadata": {"plan": "premium", "plan_price": 25000},
+        }
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+
+    from app.services.mercadopago import process_payment_notification
+
+    updated = await process_payment_notification(
+        db_session, payment_id="mp-777", access_token="TEST-AT"
+    )
+    assert updated is not None
+    assert updated.plan == "premium"
+
+
+async def test_mp_payment_rejected_when_amount_mismatches(
+    db_session: AsyncSession,
+    tenant: Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Pagar 1.000 por premium manipulando la preferencia no activa nada."""
+    async def fake_fetch(*, payment_id: str, access_token: str) -> dict:
+        return {
+            "status": "approved",
+            "external_reference": str(tenant.id),
+            "transaction_amount": 1000,
+            "currency_id": "COP",
+            "metadata": {"plan": "premium", "plan_price": 19_900},
+        }
+
+    monkeypatch.setattr("app.services.mercadopago.fetch_payment", fake_fetch)
+
+    from app.services.mercadopago import process_payment_notification
+
+    updated = await process_payment_notification(
+        db_session, payment_id="mp-888", access_token="TEST-AT"
+    )
+    assert updated is None
+    await db_session.refresh(tenant)
+    assert tenant.plan == "trial"
+
+
+async def test_plan_price_unknown_plan_404(client: AsyncClient, platform_admin: User):
+    response = await client.put(
+        "/api/v1/admin/plan-prices/diamond",
+        headers=_headers(platform_admin),
+        json={"price_cop": 1_000},
+    )
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+async def test_plan_price_requires_platform_admin(client: AsyncClient, admin_user: User):
+    """Un admin de tenant no puede tocar los precios de la plataforma."""
+    response = await client.put(
+        "/api/v1/admin/plan-prices/premium",
+        headers=_headers(admin_user),
+        json={"price_cop": 1},
+    )
+    assert response.status_code == HTTPStatus.FORBIDDEN

@@ -14,6 +14,7 @@ import {
   FollowUpRunResult,
   LoginResponse,
   Module,
+  PlanPrice,
   Quote,
   QuoteCreatePayload,
   QuoteItem,
@@ -262,6 +263,20 @@ export function deactivateContact(id: string): Promise<void> {
 
 export function fetchDashboardStats(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/dashboard/stats')
+}
+
+// ── Planes y precios (admin de plataforma) ───────────────────────────────────
+
+export function fetchPlanPrices(): Promise<PlanPrice[]> {
+  return apiFetch<PlanPrice[]>('/admin/plan-prices')
+}
+
+export function updatePlanPrice(plan: string, priceCop: number): Promise<PlanPrice> {
+  return apiFetch<PlanPrice>(`/admin/plan-prices/${encodeURIComponent(plan)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ price_cop: priceCop }),
+  })
 }
 
 // ── WhatsApp (conexión) ─────────────────────────────────────────────────────
