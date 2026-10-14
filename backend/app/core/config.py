@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     debounce_seconds: int = 5
     debounce_max_wait: int = 20
 
+    # Matching del catálogo (pg_trgm): umbral de similitud y brecha de
+    # ambigüedad — si dos ítems empatan, no se matchea (mejor confirmar)
+    catalog_similarity_threshold: float = 0.30
+    catalog_ambiguity_gap: float = 0.05
+
     # MercadoPago (fase 2): vacíos → el pago sigue siendo manual desde el panel.
     # El webhook de pagos responde 200 pero no procesa hasta que existan.
     mercadopago_access_token: str = ""

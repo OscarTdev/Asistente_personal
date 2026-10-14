@@ -17,7 +17,7 @@ from uuid import UUID
 
 from openai import APIError as OpenAIAPIError
 from openai import AsyncOpenAI
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -36,24 +36,54 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _similarity(column, text: str):
+    """Similitud pg_trgm entre el nombre del ítem y la descripción pedida."""
+    return func.similarity(column, text)
+
+
 async def _match_catalog_item(
     db: AsyncSession, *, tenant_id: UUID, description: str
 ) -> CatalogItem | None:
-    """Busca el ítem del catálogo por nombre parecido (ILIKE escapado).
+    """Busca el ítem del catálogo por similitud (pg_trgm) con respaldo ILIKE.
 
-    Sprint 0: escape de comodines y orden determinista. Sprint 1: pg_trgm
-    con umbral de similitud para tolerar variantes ("30 A" vs "30A").
+    - pg_trgm tolera variantes («30 A» vs «30A») con un umbral configurable.
+    - Si dos ítems empatan (brecha < catalog_ambiguity_gap), NO matchea:
+      enviar el precio equivocado cuesta más que confirmar.
+    - Respaldo ILIKE escapado para términos cortos que la similitud
+      trigramal no alcanza a puntuar («breaker»).
     """
-    pattern = f"%{_escape_like(description[:50])}%"
-    result = await db.execute(
-        select(CatalogItem)
-        .where(CatalogItem.tenant_id == tenant_id)
-        .where(CatalogItem.is_active.is_(True))
-        .where(CatalogItem.name.ilike(pattern))
-        .order_by(CatalogItem.name)
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    clean = description.strip()[:50]
+    if not clean:
+        return None
+    settings = get_settings()
+    threshold = settings.catalog_similarity_threshold
+    gap = settings.catalog_ambiguity_gap
+    escaped = _escape_like(clean)
+
+    score = _similarity(CatalogItem.name, clean)
+    rows = (
+        await db.execute(
+            select(CatalogItem, score.label("sim"))
+            .where(
+                CatalogItem.tenant_id == tenant_id,
+                CatalogItem.is_active.is_(True),
+                or_(
+                    score >= threshold,
+                    CatalogItem.name.ilike(f"%{escaped}%"),
+                ),
+            )
+            .order_by(score.desc())
+            .limit(2)
+        )
+    ).all()
+
+    if not rows:
+        return None
+    best_item, best_sim = rows[0][0], rows[0][1]
+    if len(rows) > 1 and (best_sim - rows[1][1]) < gap:
+        # Ambiguo: dos candidatos casi idénticos → mejor confirmar
+        return None
+    return best_item
 
 _SYSTEM_PROMPT = """Eres un asistente técnico especializado en extracción de información.
 Tu única tarea es leer el texto de un técnico y extraer los materiales

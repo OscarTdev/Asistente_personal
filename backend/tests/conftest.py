@@ -53,6 +53,9 @@ async def test_engine() -> AsyncIterator[AsyncEngine]:
         pool_pre_ping=True,
     )
     async with engine.begin() as conn:
+        # pg_trgm para el matching del catálogo (la migración la crea en dev;
+        # en tests el esquema nace de create_all: la extensión va aquí)
+        await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS pg_trgm")
         await conn.run_sync(Base.metadata.create_all)
     yield engine
     await engine.dispose()

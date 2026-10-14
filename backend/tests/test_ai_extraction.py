@@ -86,6 +86,8 @@ async def test_extract_items_with_mock_llm_and_catalog_match(
         mock_settings.return_value.llm_api_key = "test-sk-key"
         mock_settings.return_value.llm_base_url = "https://openrouter.ai/api/v1"
         mock_settings.return_value.llm_model = "meta-llama/llama-3.1-70b-instruct"
+        mock_settings.return_value.catalog_similarity_threshold = 0.30
+        mock_settings.return_value.catalog_ambiguity_gap = 0.05
 
         resp = await client.post(
             "/api/v1/quotes/extract",
