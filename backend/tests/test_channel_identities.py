@@ -89,6 +89,87 @@ async def juliana(db_session: AsyncSession, tenant: Tenant) -> Contact:
 # ── Resolución: la misma persona por cualquier puerta ─────────────────────
 
 
+# ── Puente LID → teléfono real ─────────────────────────────────────────────
+
+
+async def test_lid_alias_migrates_legacy_contact_to_real_phone(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Contacto legado creado con el LID como wa_id: cuando llega el teléfono
+    real, sus llaves migran y conserva su historial (sin duplicados)."""
+    legacy = Contact(tenant_id=tenant.id, wa_id="137314785341477", name="Niurka")
+    db_session.add(legacy)
+    await db_session.commit()
+
+    resolved = await resolve_identity(
+        db_session,
+        channel="whatsapp",
+        external_id="573043223100",
+        alias_external_id="137314785341477",
+        fallback_tenant=tenant,
+        display_name="Niurka",
+    )
+
+    assert resolved.contact.id == legacy.id
+    assert resolved.is_owner is False
+    await db_session.refresh(legacy)
+    assert legacy.wa_id == "573043223100"
+
+    identity = (
+        await db_session.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == "whatsapp",
+                ChannelIdentity.external_id == "573043223100",
+            )
+        )
+    ).scalar_one()
+    assert identity.contact_id == legacy.id
+
+
+async def test_lid_alias_identity_row_migrates_to_real_phone(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Si el prospecto ya tenía identidad registrada por LID, se migra a la
+    identidad real (el teléfono) apuntando al mismo contacto."""
+    first = await resolve_identity(
+        db_session,
+        channel="whatsapp",
+        external_id="137314785341477",
+        fallback_tenant=tenant,
+        display_name="Niurka",
+    )
+
+    resolved = await resolve_identity(
+        db_session,
+        channel="whatsapp",
+        external_id="573043223100",
+        alias_external_id="137314785341477",
+        fallback_tenant=tenant,
+        display_name="Niurka",
+    )
+
+    assert resolved.contact.id == first.contact.id
+    identity = (
+        await db_session.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == "whatsapp",
+                ChannelIdentity.external_id == "573043223100",
+            )
+        )
+    ).scalar_one()
+    assert identity.contact_id == first.contact.id
+    # El LID ya no debe tener identidad propia (migrada, no duplicada)
+    stale = (
+        await db_session.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == "whatsapp",
+                ChannelIdentity.external_id == "137314785341477",
+            )
+        )
+    ).scalar_one_or_none()
+    assert stale is None
+
+
 async def test_same_human_same_core_across_channels(
     db_session: AsyncSession, tenant: Tenant, juliana: Contact
 ):

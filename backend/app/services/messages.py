@@ -72,6 +72,7 @@ async def ingest_message(
             db,
             channel=channel.identity_channel,
             external_id=incoming.wa_id,
+            alias_external_id=incoming.wa_lid,
             fallback_tenant=bot_owner,
             display_name=incoming.push_name,
         )
@@ -84,6 +85,7 @@ async def ingest_message(
             db,
             channel=channel.identity_channel,
             external_id=incoming.wa_id,
+            alias_external_id=incoming.wa_lid,
             fallback_tenant=tenant,
             display_name=incoming.push_name,
         )

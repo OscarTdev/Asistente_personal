@@ -40,7 +40,25 @@ class EvolutionChannel(Channel):
             message = data["message"]
 
             channel_message_id = key["id"]
-            wa_id = key["remoteJid"].split("@", 1)[0]
+            remote_jid = str(key["remoteJid"])
+            wa_id = remote_jid.split("@", 1)[0]
+            wa_lid: str | None = None
+            if remote_jid.endswith("@lid"):
+                # WhatsApp está migrando a LID (identificador interno por
+                # privacidad): el teléfono real llega en el sobre del webhook
+                # (sender) o en key.remoteJidAlt. Sin él se conserva el LID
+                # como wa_id: el mensaje se ingesta, pero no se puede
+                # responder hasta que llegue uno con el teléfono real.
+                real = ""
+                sender = str(payload.get("sender") or "")
+                alt = str(key.get("remoteJidAlt") or "")
+                if sender.endswith("@s.whatsapp.net"):
+                    real = sender.split("@", 1)[0]
+                elif alt.endswith("@s.whatsapp.net"):
+                    real = alt.split("@", 1)[0]
+                if real:
+                    wa_lid = wa_id
+                    wa_id = real
             push_name = data.get("pushName")
             from_me = bool(key.get("fromMe", False))
             # NOTA: los fromMe (escritos desde el teléfono del dueño) NO se
@@ -72,6 +90,7 @@ class EvolutionChannel(Channel):
             return IncomingMessage(
                 channel_message_id=channel_message_id,
                 wa_id=wa_id,
+                wa_lid=wa_lid,
                 push_name=push_name,
                 message_type=message_type,
                 text=text,

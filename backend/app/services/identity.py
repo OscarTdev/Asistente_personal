@@ -98,9 +98,16 @@ async def resolve_identity(
     external_id: str,
     fallback_tenant: Tenant,
     display_name: str | None = None,
+    alias_external_id: str | None = None,
 ) -> ResolvedIdentity:
-    """Traduce una identidad de canal a su núcleo (tenant + contacto)."""
-    # 1) Identidad ya registrada: directo al núcleo
+    """Traduce una identidad de canal a su núcleo (tenant + contacto).
+
+    alias_external_id: identidad alternativa del MISMO humano (p. ej. el
+    LID de WhatsApp, que algunos chats usan en lugar del teléfono). Si la
+    identidad real no existe pero la alias sí, sus llaves se migran al
+    identificador real: el LID es interno de WhatsApp; el teléfono es la
+    identidad estable.
+    """
     identity = (
         await db.execute(
             select(ChannelIdentity).where(
@@ -109,6 +116,21 @@ async def resolve_identity(
             )
         )
     ).scalar_one_or_none()
+    if identity is None and alias_external_id and alias_external_id != external_id:
+        identity = (
+            await db.execute(
+                select(ChannelIdentity).where(
+                    ChannelIdentity.channel == channel,
+                    ChannelIdentity.external_id == alias_external_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if identity is not None:
+            identity.external_id = external_id
+            await db.flush()
+            logger.info(
+                "Identidad %s/%s migrada a %s", channel, alias_external_id, external_id
+            )
     if identity is not None:
         contact = (
             await db.execute(
@@ -180,6 +202,46 @@ async def resolve_identity(
             return ResolvedIdentity(
                 tenant=owner_tenant, contact=contact, is_owner=False, created=False
             )
+
+        # Puente LID: contacto legado creado con el LID como wa_id (antes del
+        # fix del LID no se podía responderle). Migra su llave al teléfono
+        # real y conserva su historial.
+        if alias_external_id and alias_external_id != external_id:
+            alias_contact = (
+                await db.execute(
+                    select(Contact)
+                    .where(
+                        Contact.wa_id == alias_external_id,
+                        Contact.is_active.is_(True),
+                    )
+                    .order_by(Contact.created_at.desc())
+                )
+            ).scalars().first()
+            if alias_contact is not None:
+                alias_contact.wa_id = external_id
+                owner_tenant = (
+                    await db.execute(
+                        select(Tenant).where(Tenant.id == alias_contact.tenant_id)
+                    )
+                ).scalar_one()
+                await _register(
+                    db,
+                    tenant=owner_tenant,
+                    contact=alias_contact,
+                    kind=KIND_CONTACT,
+                    channel=channel,
+                    external_id=external_id,
+                )
+                logger.info(
+                    "Contacto legado %s migrado del LID al teléfono real",
+                    alias_contact.id,
+                )
+                return ResolvedIdentity(
+                    tenant=owner_tenant,
+                    contact=alias_contact,
+                    is_owner=False,
+                    created=False,
+                )
 
     # 3) Desconocido en cualquier canal: prospecto en el tenant fallback
     contact, created = await _get_or_create_contact(

@@ -246,6 +246,79 @@ async def test_send_text_calls_evolution(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
+async def test_parse_lid_message_resolves_real_number():
+    """Chats con LID: el teléfono real llega en el sobre del webhook (sender)."""
+    payload = {
+        "event": "messages.upsert",
+        "instance": "aura",
+        "data": {
+            "key": {
+                "id": "AC7F4DB89E176E859398A7F55DD63A94",
+                "remoteJid": "137314785341477@lid",
+                "remoteJidAlt": None,
+                "fromMe": False,
+                "addressingMode": "lid",
+            },
+            "pushName": "Niurka",
+            "messageType": "conversation",
+            "message": {"conversation": "Hola"},
+        },
+        "sender": "573043223100@s.whatsapp.net",
+    }
+
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert result.wa_id == "573043223100"
+    assert result.wa_lid == "137314785341477"
+    assert result.push_name == "Niurka"
+
+
+@pytest.mark.asyncio
+async def test_parse_lid_without_real_number_keeps_lid():
+    """Sin sender ni remoteJidAlt: el LID queda como wa_id (el mensaje no se pierde)."""
+    payload = {
+        "event": "messages.upsert",
+        "instance": "aura",
+        "data": {
+            "key": {
+                "id": "3EB0LID0000000001",
+                "remoteJid": "137314785341477@lid",
+                "fromMe": False,
+            },
+            "message": {"conversation": "Hola"},
+        },
+    }
+
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert result.wa_id == "137314785341477"
+    assert result.wa_lid is None
+
+
+@pytest.mark.asyncio
+async def test_parse_lid_falls_back_to_remote_jid_alt():
+    """remoteJidAlt con el JID real también resuelve el teléfono."""
+    payload = {
+        "event": "messages.upsert",
+        "instance": "aura",
+        "data": {
+            "key": {
+                "id": "3EB0LID0000000002",
+                "remoteJid": "137314785341477@lid",
+                "remoteJidAlt": "573043223100@s.whatsapp.net",
+                "fromMe": False,
+            },
+            "message": {"conversation": "Hola"},
+        },
+    }
+
+    result = await EvolutionChannel().parse_incoming(payload)
+
+    assert result.wa_id == "573043223100"
+    assert result.wa_lid == "137314785341477"
+
+
+@pytest.mark.asyncio
 async def test_send_document_calls_send_media(monkeypatch: pytest.MonkeyPatch):
     """send_document llama a /message/sendMedia/{instance} con el base64."""
     import httpx
