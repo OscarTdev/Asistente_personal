@@ -163,6 +163,9 @@ def webhook_headers(monkeypatch) -> dict[str, str]:
 
     monkeypatch.setattr(
         "app.api.deps.get_settings",
-        lambda: SimpleNamespace(webhook_secret="test-webhook-secret"),
+        lambda: SimpleNamespace(
+            webhook_secret="test-webhook-secret",
+            platform_tenant_slug="plataforma",
+        ),
     )
     return {"X-Webhook-Secret": "test-webhook-secret"}

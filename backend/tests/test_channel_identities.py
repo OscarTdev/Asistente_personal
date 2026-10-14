@@ -194,11 +194,17 @@ async def test_webhook_creates_identity(
     """Un mensaje entrante deja su identidad registrada."""
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        headers={"X-Tenant-Slug": tenant.slug, **webhook_headers},
+        headers=webhook_headers,
         json=_whatsapp_payload("573006667777"),
     )
     assert response.status_code == HTTPStatus.OK
 
+    # El desconocido cae en el tenant de plataforma (puerta única)
+    platform = (
+        await db_session.execute(
+            select(Tenant).where(Tenant.slug == "plataforma")
+        )
+    ).scalar_one()
     identity = (
         await db_session.execute(
             select(ChannelIdentity).where(
@@ -207,7 +213,7 @@ async def test_webhook_creates_identity(
             )
         )
     ).scalar_one()
-    assert identity.tenant_id == tenant.id
+    assert identity.tenant_id == platform.id
     assert identity.kind == KIND_CONTACT
 
 
@@ -215,7 +221,7 @@ async def test_webhook_routes_via_registered_identity(
     client, db_session: AsyncSession, tenant: Tenant, tenant2: Tenant,
     juliana: Contact, webhook_headers: dict,
 ):
-    """La identidad gana sobre el fallback del slug: el mensaje cae en SU tenant."""
+    """La identidad gana sobre la puerta de plataforma: el mensaje cae en SU tenant."""
     await link_identity(
         db_session,
         tenant=tenant,
@@ -228,8 +234,7 @@ async def test_webhook_routes_via_registered_identity(
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        # slug del tenant2 a propósito: la identidad de Juliana debe ganar
-        headers={"X-Tenant-Slug": tenant2.slug, **webhook_headers},
+        headers=webhook_headers,  # sin slug: la identidad de Juliana decide
         json=_whatsapp_payload("573009990001"),
     )
     assert response.status_code == HTTPStatus.OK
@@ -326,6 +331,12 @@ async def test_onboarding_clears_prospect_identity(
         message=message, contact=contact, conversation=conversation,
     )
     message.content = "Aura"
+    await db_session.commit()
+    await orchestrator.handle_incoming(
+        db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
+        message=message, contact=contact, conversation=conversation,
+    )
+    message.content = "1"  # persona natural → sin NIT
     await db_session.commit()
     await orchestrator.handle_incoming(
         db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]

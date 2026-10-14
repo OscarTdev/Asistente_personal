@@ -466,8 +466,7 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
 
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        # slug del OTRO tenant a propósito: el routing por wa_id gana
-        headers={"X-Tenant-Slug": tenant.slug, **webhook_headers},
+        headers=webhook_headers,  # sin slug: el remitente decide
         json=_whatsapp_payload("573005551111", "Cotízame 3 tomacorrientes"),
     )
     assert response.status_code == HTTPStatus.OK
@@ -480,26 +479,33 @@ async def test_whatsapp_routes_registered_technician_to_their_tenant(
     assert message.tenant_id == tenant2.id
 
 
-async def test_whatsapp_unknown_sender_falls_back_to_slug_tenant(
+async def test_whatsapp_unknown_sender_lands_in_platform_tenant(
     client: AsyncClient,
     db_session: AsyncSession,
     tenant: Tenant,
     webhook_headers: dict,
 ):
-    """Número no registrado → behavior original: tenant del slug."""
+    """Desconocido → tenant de plataforma (la puerta de entrada única)."""
     response = await client.post(
         "/api/v1/webhooks/whatsapp",
-        headers={"X-Tenant-Slug": tenant.slug, **webhook_headers},
+        headers=webhook_headers,
         json=_whatsapp_payload("573007778888", "Hola"),
     )
     assert response.status_code == HTTPStatus.OK
+
+    platform = (
+        await db_session.execute(
+            select(Tenant).where(Tenant.slug == "plataforma")
+        )
+    ).scalar_one()
+    assert platform.is_platform is True
 
     message = (
         await db_session.execute(
             select(Message).where(Message.direction == "in")
         )
     ).scalars().one()
-    assert message.tenant_id == tenant.id
+    assert message.tenant_id == platform.id
 
 
 # ── Webhook de MercadoPago ─────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_tenant_by_slug, require_role
+from app.api.deps import get_current_user, get_platform_tenant, require_role
 from app.core.security import create_access_token
 from app.models import Tenant, User
 
@@ -126,28 +126,25 @@ async def test_require_role_rejects(db_session: AsyncSession, tenant: Tenant):
 
 
 @pytest.mark.asyncio
-async def test_get_tenant_by_slug_valid(db_session: AsyncSession, tenant: Tenant):
-    """Slug válido → devuelve el tenant activo."""
-    result = await get_tenant_by_slug(x_tenant_slug=tenant.slug, db=db_session)
-    assert result.id == tenant.id
+async def test_get_platform_tenant_creates_it(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """La puerta de plataforma se crea perezosamente con su bandera."""
+    platform = await get_platform_tenant(db=db_session)
+    assert platform.slug == "plataforma"
+    assert platform.is_platform is True
+
+    # Idempotente: la segunda llamada devuelve la misma fila
+    again = await get_platform_tenant(db=db_session)
+    assert again.id == platform.id
 
 
 @pytest.mark.asyncio
-async def test_get_tenant_by_slug_invalid_slug(db_session: AsyncSession):
-    """Slug desconocido → 404 sin filtrar información."""
-    with pytest.raises(HTTPException) as exc_info:
-        await get_tenant_by_slug(x_tenant_slug="nonexistent", db=db_session)
-    assert exc_info.value.status_code == HTTPStatus.NOT_FOUND
-    assert "Tenant no encontrado" in exc_info.value.detail
-
-
-@pytest.mark.asyncio
-async def test_get_tenant_by_slug_inactive_tenant(db_session: AsyncSession, tenant: Tenant):
-    """Tenant inactivo → 404 igual que slug desconocido."""
-    tenant.is_active = False
-    await db_session.commit()
-
-    with pytest.raises(HTTPException) as exc_info:
-        await get_tenant_by_slug(x_tenant_slug=tenant.slug, db=db_session)
-    assert exc_info.value.status_code == HTTPStatus.NOT_FOUND
-    assert "Tenant no encontrado" in exc_info.value.detail
+async def test_get_platform_tenant_never_touches_business_tenants(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """La puerta de plataforma es propia: nunca devuelve un tenant de negocio."""
+    platform = await get_platform_tenant(db=db_session)
+    assert platform.id != tenant.id
+    assert platform.is_platform is True
+    assert tenant.is_platform is False

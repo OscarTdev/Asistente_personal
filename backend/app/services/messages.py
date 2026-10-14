@@ -56,20 +56,38 @@ async def ingest_message(
         # ("mensaje a ti mismo") es el dueño hablándole a su asistente —
         # cuando el bot corre en su propio número. Sus respuestas manuales
         # a terceros (remoteJid ≠ su número) no se ingieren.
-        if not (tenant.wa_id and incoming.wa_id == tenant.wa_id):
+        # El número del bot puede estar registrado en CUALQUIER tenant
+        # (el del dueño de la plataforma), no en el de plataforma.
+        bot_owner = (
+            await db.execute(
+                select(Tenant).where(
+                    Tenant.wa_id == incoming.wa_id, Tenant.is_active.is_(True)
+                )
+            )
+        ).scalar_one_or_none()
+        if bot_owner is None:
             raise SelfMessageIgnored("Mensaje propio (fromMe) ignorado")
-        # auto-chat del dueño: sigue la resolución normal (crea su identidad)
+        # auto-chat: resolvemos su identidad con SU tenant como fallback
+        resolved = await identity_service.resolve_identity(
+            db,
+            channel=channel.identity_channel,
+            external_id=incoming.wa_id,
+            fallback_tenant=bot_owner,
+            display_name=incoming.push_name,
+        )
+    else:
+        # El núcleo no depende del canal: esta identidad puede ser su número
+        # de WhatsApp, su usuario de Telegram o el de la app — siempre es el
+        # mismo contacto con el mismo historial. Los desconocidos caen en el
+        # tenant de plataforma (la puerta de entrada).
+        resolved = await identity_service.resolve_identity(
+            db,
+            channel=channel.identity_channel,
+            external_id=incoming.wa_id,
+            fallback_tenant=tenant,
+            display_name=incoming.push_name,
+        )
 
-    # El núcleo no depende del canal: esta identidad puede ser su número de
-    # WhatsApp, su usuario de Telegram o el de la app — siempre es el mismo
-    # contacto con el mismo historial.
-    resolved = await identity_service.resolve_identity(
-        db,
-        channel=channel.identity_channel,
-        external_id=incoming.wa_id,
-        fallback_tenant=tenant,
-        display_name=incoming.push_name,
-    )
     tenant = resolved.tenant
     contact = resolved.contact
 

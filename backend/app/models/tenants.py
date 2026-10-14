@@ -28,3 +28,21 @@ class Tenant(Base):
     # WhatsApp del dueño (técnico): con UN número de bot compartido, el webhook
     # identifica quién escribe por este campo y enruta a SU tenant.
     wa_id: Mapped[str | None] = mapped_column(String(20), nullable=True, unique=True)
+    # Tipo de cuenta: "personal" (persona natural, sin NIT) o "business"
+    # (negocio o empresa: se pide NIT con dígito de verificación)
+    account_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="personal"
+    )
+    # NIT con dígito de verificación — solo para cuentas business
+    nit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Atención al cliente por chat: apagado por defecto (el bot calla con los
+    # clientes del dueño salvo que el negocio lo active)
+    customer_mode: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # Tenant de la plataforma: la puerta donde caen los desconocidos
+    # (onboarding y soporte). Los datos de la plataforma nunca se mezclan
+    # con los de un negocio.
+    is_platform: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )

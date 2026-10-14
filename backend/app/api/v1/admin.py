@@ -112,6 +112,9 @@ def _summary(
         plan_label=PLAN_LABELS.get(tenant.plan, tenant.plan),
         plan_price_cop=PLAN_PRICE_COP.get(tenant.plan, 0),
         wa_id=tenant.wa_id,
+        account_type=tenant.account_type,
+        nit=tenant.nit,
+        customer_mode=tenant.customer_mode,
         subscription_status=sub.status if sub else None,
         subscription_period_end=sub.current_period_end if sub else None,
         enabled_modules=enabled_modules,
@@ -275,6 +278,9 @@ async def update_tenant(
         bot_name = body.bot_name.strip()
         if bot_name:
             tenant.bot_name = bot_name
+    if body.customer_mode is not None:
+        # Atención al cliente por chat: apagada por defecto (Enmienda A)
+        tenant.customer_mode = body.customer_mode
 
     await db.commit()
     await db.refresh(tenant)

@@ -24,9 +24,10 @@ class Settings(BaseSettings):
     evolution_api_url: str = "http://127.0.0.1:8080"
     evolution_api_key: str = ""
     evolution_instance: str = "aura"
-    # Tenant por defecto cuando el webhook no trae el header X-Tenant-Slug
-    # (modo instancia única; multi-tenant = una instancia por tenant)
-    default_tenant_slug: str = "personal"
+    # Tenant de la plataforma (Enmienda A): la puerta donde caen los números
+    # desconocidos — onboarding y soporte. Sin X-Tenant-Slug: el remitente
+    # se resuelve por su número, no por parámetros que controla el emisor.
+    platform_tenant_slug: str = "plataforma"
 
     # Webhook de WhatsApp: secreto compartido con Evolution (fail-closed,
     # sin él el endpoint responde 401). Se configura como cabecera del

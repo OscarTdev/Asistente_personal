@@ -22,7 +22,7 @@ class ChannelIdentity(Base, TimestampMixin):
         UniqueConstraint(
             "channel", "external_id", name="uq_channel_identities_channel_external"
         ),
-        CheckConstraint("kind IN ('owner', 'contact')", name="kind"),
+        CheckConstraint("kind IN ('owner', 'team', 'contact')", name="kind"),
     )
 
     id: Mapped[UUID] = mapped_column(

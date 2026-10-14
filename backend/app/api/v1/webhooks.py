@@ -16,7 +16,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_tenant_by_slug, verify_webhook_secret
+from app.api.deps import get_platform_tenant, verify_webhook_secret
 from app.channels import get_channel
 from app.channels.base import ChannelParseError, SelfMessageIgnored
 from app.core.config import get_settings
@@ -35,7 +35,7 @@ router = APIRouter()
 @router.post("/whatsapp", response_model=WebhookAck)
 async def webhook_whatsapp(
     background_tasks: BackgroundTasks,
-    tenant: Tenant = Depends(get_tenant_by_slug),
+    tenant: Tenant = Depends(get_platform_tenant),
     db: AsyncSession = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
     payload: dict = Body(...),
@@ -45,6 +45,10 @@ async def webhook_whatsapp(
 
     Fail-closed: sin el secreto compartido (cabecera X-Webhook-Secret
     configurada en la instancia de Evolution) la puerta no abre.
+
+    Con UN número compartido no hay X-Tenant-Slug: el remitente se resuelve
+    por su número (channel_identities); los desconocidos caen en el tenant
+    de plataforma (onboarding y soporte).
     """
     channel = get_channel("evolution")
 

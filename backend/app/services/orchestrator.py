@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.channels.base import Channel
 from app.core.config import get_settings
 from app.models import (
+    ChannelIdentity,
     Contact,
     Conversation,
     Event,
@@ -60,6 +61,21 @@ REGLAS:
   necesita y las cantidades.
 - No ofrezcas servicios que no existen. Si preguntan por algo que no está
   disponible, dilo con claridad y ofrece tomarle el mensaje.
+"""
+
+_CUSTOMER_PROMPT = """Eres {bot_name}, el asistente de WhatsApp de {tenant_name} \
+(negocio de oficios en Colombia).
+Atiendes a los clientes del negocio: mensajes cortos, cálidos y profesionales.
+
+REGLAS:
+- Responde SIEMPRE en español, tono cercano, estilo WhatsApp: una sola
+  pregunta o idea por mensaje.
+- NUNCA inventes precios, plazos ni promesas: los precios salen del
+  catálogo del negocio y solo se comparten en una cotización formal.
+- Si no sabes algo, si el cliente se queja o pide algo delicado, dile con
+  naturalidad que lo conectas con el dueño y avísale por dentro.
+- No menciones datos de otros clientes ni asumas información que no te dieron.
+- Aclara que eres un asistente automático si te lo preguntan.
 """
 
 
@@ -384,6 +400,83 @@ async def _handle_quote(
     logger.info("Cotización %s preparada para el dueño", quote.id)
 
 
+async def _is_team_member(
+    db: AsyncSession, *, tenant: Tenant, contact: Contact
+) -> bool:
+    """¿El remitente es dueño o equipo? Identidad owner/team o legado wa_id."""
+    if tenant.wa_id and contact.wa_id == tenant.wa_id:
+        return True
+    identity = (
+        await db.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == "whatsapp",
+                ChannelIdentity.external_id == contact.wa_id,
+                ChannelIdentity.tenant_id == tenant.id,
+            )
+        )
+    ).scalar_one_or_none()
+    return identity is not None and identity.kind in ("owner", "team")
+
+
+async def _chat_reply(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    conversation: Conversation,
+    channel: Channel,
+    wa_id: str,
+    text: str,
+    system_prompt: str,
+    contact_id_for_usage=None,
+) -> None:
+    """Conversa con el LLM usando el historial y responde por el canal."""
+    settings = get_settings()
+    history = await _conversation_history(db, conversation.id)
+    messages_payload = [
+        {
+            "role": "system",
+            "content": system_prompt.format(
+                bot_name=tenant.bot_name, tenant_name=tenant.name
+            ),
+        }
+    ]
+    for historical in history:
+        role = "user" if historical.direction == "in" else "assistant"
+        content_text = historical.content or f"[{historical.type}]"
+        messages_payload.append({"role": role, "content": content_text})
+    if messages_payload[-1]["role"] != "user":
+        messages_payload.append({"role": "user", "content": text})
+
+    client = AsyncOpenAI(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        timeout=30,
+    )
+    response = await client.chat.completions.create(
+        model=settings.llm_model,
+        messages=messages_payload,
+        temperature=0.6,
+        max_tokens=400,
+    )
+    reply = (response.choices[0].message.content or "").strip()
+    if reply:
+        await _send_out_message(
+            db,
+            tenant_id=tenant.id,
+            conversation=conversation,
+            channel=channel,
+            wa_id=wa_id,
+            text=reply,
+        )
+        await log_service_usage(
+            db,
+            tenant_id=tenant.id,
+            module_key="quoter",
+            kind="message",
+            contact_id=contact_id_for_usage,
+        )
+
+
 async def _is_prospect(
     db: AsyncSession, *, contact: Contact, conversation: Conversation
 ) -> bool:
@@ -448,9 +541,9 @@ async def handle_incoming(
     if not settings.evolution_api_key:
         return
 
-    is_owner = bool(tenant.wa_id) and contact.wa_id == tenant.wa_id
+    is_team = await _is_team_member(db, tenant=tenant, contact=contact)
 
-    if not is_owner:
+    if not is_team:
         text_in = (message.content or "").strip()
 
         # Onboarding en curso → siguiente paso del registro
@@ -476,11 +569,30 @@ async def handle_incoming(
             )
             return
 
-        # Cliente del dueño: registrado, histórico, y en silencio
+        # Cliente conocido: atención solo si el negocio la activó
+        # (por defecto el bot calla; sus respuestas alimentan el seguimiento)
+        if tenant.customer_mode:
+            try:
+                await _chat_reply(
+                    db,
+                    tenant=tenant,
+                    conversation=conversation,
+                    channel=channel,
+                    wa_id=contact.wa_id,
+                    text=text_in,
+                    system_prompt=_CUSTOMER_PROMPT,
+                    contact_id_for_usage=contact.id,
+                )
+            except Exception:
+                logger.exception(
+                    "El modo atención al cliente falló con el mensaje %s", message.id
+                )
+            return
+
         logger.debug("Mensaje %s de un cliente del dueño: el bot calla", message.id)
         return
 
-    # ── El dueño le habla a su asistente ────────────────────────────────────
+    # ── El dueño o su equipo le hablan al asistente ────────────────────────
 
     # El asistente solo atiende con el cotizador encendido (contrato del plan)
     if not await _quoter_enabled(db, tenant.id):
@@ -534,48 +646,16 @@ async def handle_incoming(
             return
 
         # Conversación: el LLM responde con el contexto del historial
-        history = await _conversation_history(db, conversation.id)
-        messages_payload = [
-            {"role": "system", "content": _SYSTEM_PROMPT.format(
-                bot_name=tenant.bot_name,
-                tenant_name=tenant.name,
-            )}
-        ]
-        for historical in history:
-            role = "user" if historical.direction == "in" else "assistant"
-            content_text = historical.content or f"[{historical.type}]"
-            messages_payload.append({"role": role, "content": content_text})
-        if not messages_payload[-1]["role"] == "user":
-            messages_payload.append({"role": "user", "content": text})
-
-        client = AsyncOpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-            timeout=30,
+        await _chat_reply(
+            db,
+            tenant=tenant,
+            conversation=conversation,
+            channel=channel,
+            wa_id=wa_id,
+            text=text,
+            system_prompt=_SYSTEM_PROMPT,
+            contact_id_for_usage=contact.id,
         )
-        response = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=messages_payload,
-            temperature=0.6,
-            max_tokens=400,
-        )
-        reply = (response.choices[0].message.content or "").strip()
-        if reply:
-            await _send_out_message(
-                db,
-                tenant_id=tenant.id,
-                conversation=conversation,
-                channel=channel,
-                wa_id=wa_id,
-                text=reply,
-            )
-            await log_service_usage(
-                db,
-                tenant_id=tenant.id,
-                module_key="quoter",
-                kind="message",
-                contact_id=contact.id,
-            )
     except Exception:
         logger.exception("El orquestador falló atendiendo el mensaje %s", message.id)
         try:

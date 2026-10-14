@@ -22,6 +22,7 @@ class TenantUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     bot_name: str | None = Field(default=None, min_length=1, max_length=50)
+    customer_mode: bool | None = None
 
 
 class ChannelIdentityCreate(BaseModel):
@@ -29,7 +30,7 @@ class ChannelIdentityCreate(BaseModel):
 
     channel: Literal["whatsapp", "telegram", "web"]
     external_id: str = Field(min_length=1, max_length=100)
-    kind: Literal["owner", "contact"] = "contact"
+    kind: Literal["owner", "team", "contact"] = "contact"
 
 
 class ChannelIdentityOut(BaseModel):
@@ -115,6 +116,9 @@ class TenantAdminSummary(BaseModel):
     plan_label: str
     plan_price_cop: int
     wa_id: str | None
+    account_type: str
+    nit: str | None
+    customer_mode: bool
     subscription_status: str | None
     subscription_period_end: datetime | None
     enabled_modules: int
