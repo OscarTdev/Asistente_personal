@@ -1,6 +1,7 @@
 """Esquemas del panel de administración de la plataforma."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,6 +22,25 @@ class TenantUpdateRequest(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=100)
     bot_name: str | None = Field(default=None, min_length=1, max_length=50)
+
+
+class ChannelIdentityCreate(BaseModel):
+    """Vincula una identidad de canal a un contacto (su Telegram, su app)."""
+
+    channel: Literal["whatsapp", "telegram", "web"]
+    external_id: str = Field(min_length=1, max_length=100)
+    kind: Literal["owner", "contact"] = "contact"
+
+
+class ChannelIdentityOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    channel: str
+    external_id: str
+    kind: str
+    contact_id: UUID
+    created_at: datetime
 
 
 class CheckoutLinkRequest(BaseModel):

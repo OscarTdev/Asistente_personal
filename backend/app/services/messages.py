@@ -8,7 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels.base import Channel, SelfMessageIgnored
-from app.models import Contact, Conversation, Event, Message, Tenant
+from app.models import Conversation, Event, Message, Tenant
+from app.services import identity as identity_service
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +22,7 @@ class IngestResult(NamedTuple):
     created: bool
 
 
-async def _resolve_tenant(
-    db: AsyncSession, wa_id: str, fallback: Tenant
-) -> Tenant:
-    """Un número de bot compartido: el remitente identifica al tenant.
-
-    Si quien escribe es un técnico registrado (tenants.wa_id) → SU tenant
-    (su historial, su catálogo, su plan). Si no → el del slug/instancia
-    (comportamiento original: clientes del bot en modo instancia única).
-    """
-    tenant = (
-        await db.execute(
-            select(Tenant).where(Tenant.wa_id == wa_id, Tenant.is_active)
-        )
-    ).scalar_one_or_none()
-    return tenant or fallback
+logger = logging.getLogger(__name__)
 
 
 async def ingest_message(
@@ -49,18 +36,18 @@ async def ingest_message(
     Pasos:
     0. fromMe: solo el auto-chat del dueño ("mensaje a ti mismo", remoteJid
        = su propio número = tenants.wa_id) es conversación con el asistente;
-       sus respuestas manuales a terceros se ignoran. De los demás
-       remitentes NO se re-routearía nada: el orquestador decide el rol.
+       sus respuestas manuales a terceros se ignoran.
     1. parse_incoming (ChannelParseError → 400 en el endpoint).
-    2. Si el remitente no es fromMe y está registrado como dueño de un
-       tenant → se enruta a SU tenant (número compartido).
+    2. Resolución de identidad (channel_identities): quién escribe → su
+       contacto y SU tenant, venga por WhatsApp, Telegram o la app. El
+       legado de WhatsApp crea las identidades perezosamente; los
+       desconocidos quedan como prospecto en el tenant del slug.
     3. Dedupe por (tenant_id, whatsapp_message_id) → existente → (msg, None, False).
-    4. Get-or-create Contact por (tenant_id, wa_id); rellena name si estaba NULL.
-    5. Get-or-create Conversation (la más reciente del contacto) y actualizar
+    4. Get-or-create Conversation (la más reciente del contacto) y actualizar
        last_message_at.
-    6. Insert Message (direction="in") y Event "message.received" con payload
+    5. Insert Message (direction="in") y Event "message.received" con payload
        de valores serializables (UUIDs como str).
-    7. Commit; IntegrityError (carrera del UNIQUE) → rollback + re-consultar.
+    6. Commit; IntegrityError (carrera del UNIQUE) → rollback + re-consultar.
     """
     incoming = await channel.parse_incoming(payload)
 
@@ -71,9 +58,20 @@ async def ingest_message(
         # a terceros (remoteJid ≠ su número) no se ingieren.
         if not (tenant.wa_id and incoming.wa_id == tenant.wa_id):
             raise SelfMessageIgnored("Mensaje propio (fromMe) ignorado")
-        # auto-chat: sigue con el tenant del slug, sin re-routear
-    else:
-        tenant = await _resolve_tenant(db, incoming.wa_id, tenant)
+        # auto-chat del dueño: sigue la resolución normal (crea su identidad)
+
+    # El núcleo no depende del canal: esta identidad puede ser su número de
+    # WhatsApp, su usuario de Telegram o el de la app — siempre es el mismo
+    # contacto con el mismo historial.
+    resolved = await identity_service.resolve_identity(
+        db,
+        channel=channel.identity_channel,
+        external_id=incoming.wa_id,
+        fallback_tenant=tenant,
+        display_name=incoming.push_name,
+    )
+    tenant = resolved.tenant
+    contact = resolved.contact
 
     # Dedupe por (tenant_id, whatsapp_message_id)
     stmt = (
@@ -89,28 +87,8 @@ async def ingest_message(
         )
         return IngestResult(existing_message, None, False)
 
-    # Get-or-create Contact por (tenant_id, wa_id)
-    stmt = (
-        select(Contact)
-        .where(Contact.tenant_id == tenant.id)
-        .where(Contact.wa_id == incoming.wa_id)
-    )
-    result = await db.execute(stmt)
-    contact = result.scalar_one_or_none()
-    if contact is None:
-        contact = Contact(
-            tenant_id=tenant.id,
-            wa_id=incoming.wa_id,
-            name=incoming.push_name,
-        )
-        db.add(contact)
-        await db.flush()
-        # Sin wa_id (teléfono) en logs — dato personal (Ley 1581)
-        logger.debug("Contacto creado %s (tenant %s)", contact.id, tenant.id)
-    elif incoming.push_name and contact.name is None:
-        contact.name = incoming.push_name
-        await db.flush()
-        logger.debug("Nombre del contacto %s actualizado desde push_name", contact.id)
+    # El contacto viene resuelto por la identidad (mismo humano por
+    # cualquier canal = mismo contacto con el mismo historial)
 
     # Get-or-create Conversation (la más reciente del contacto)
     stmt = (

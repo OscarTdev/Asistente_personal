@@ -178,6 +178,15 @@ async def continue_onboarding(
             db, tenant_id=new_tenant.id, plan="trial", provider="system"
         )
 
+        # Deja de ser el contacto-puerta de la plataforma: su identidad de
+        # prospecto se limpia para que su próximo mensaje lo routee a SU
+        # tenant como dueño (y no al fallback como prospecto).
+        from app.services.identity import clear_identities
+
+        await clear_identities(
+            db, channel="whatsapp", external_id=contact.wa_id
+        )
+
         contact.onboarding_state = None
         await db.commit()
         await ask(_services_menu(bot_name))

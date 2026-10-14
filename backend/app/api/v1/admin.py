@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_platform_admin
@@ -24,6 +25,7 @@ from app.core.modules_registry import (
     plan_allows,
 )
 from app.models import (
+    ChannelIdentity,
     Contact,
     Conversation,
     Message,
@@ -35,6 +37,8 @@ from app.models import (
     User,
 )
 from app.schemas.admin import (
+    ChannelIdentityCreate,
+    ChannelIdentityOut,
     CheckoutLinkRequest,
     CheckoutLinkResult,
     ConversationAdminItem,
@@ -51,6 +55,7 @@ from app.schemas.admin import (
     TenantWhatsappUpdate,
 )
 from app.services.entitlements import apply_plan
+from app.services.identity import link_identity
 from app.services.mercadopago import create_checkout_link
 
 logger = logging.getLogger(__name__)
@@ -454,6 +459,142 @@ async def toggle_tenant_module(
         is_enabled=module.is_enabled,
         entitled=plan_allows(tenant.plan, module.module_key),
     )
+
+
+# ── Identidades por canal (multi-canal: WhatsApp, Telegram, app) ───────────
+
+
+@router.get(
+    "/tenants/{tenant_id}/contacts/{contact_id}/identities",
+    response_model=list[ChannelIdentityOut],
+)
+async def list_contact_identities(
+    tenant_id: UUID,
+    contact_id: UUID,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[ChannelIdentityOut]:
+    """Las puertas de un contacto: por dónde puede hablarle al asistente."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    contact = (
+        await db.execute(
+            select(Contact).where(
+                Contact.id == contact_id, Contact.tenant_id == tenant.id
+            )
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Contacto no encontrado"
+        )
+
+    rows = (
+        await db.execute(
+            select(ChannelIdentity)
+            .where(
+                ChannelIdentity.tenant_id == tenant.id,
+                ChannelIdentity.contact_id == contact.id,
+            )
+            .order_by(ChannelIdentity.created_at.desc())
+        )
+    ).scalars().all()
+    return list(rows)
+
+
+@router.post(
+    "/tenants/{tenant_id}/contacts/{contact_id}/identities",
+    response_model=ChannelIdentityOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_contact_identity(
+    tenant_id: UUID,
+    contact_id: UUID,
+    body: ChannelIdentityCreate,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ChannelIdentityOut:
+    """Vincula una identidad nueva a un contacto (p. ej. su usuario de Telegram).
+
+    A partir de ese momento, escribir por ese canal es el mismo usuario con
+    el mismo historial — no pierde nada al cambiar de puerta.
+    """
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    contact = (
+        await db.execute(
+            select(Contact).where(
+                Contact.id == contact_id, Contact.tenant_id == tenant.id
+            )
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Contacto no encontrado"
+        )
+
+    clash = (
+        await db.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == body.channel,
+                ChannelIdentity.external_id == body.external_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ese identificador ya pertenece a otro contacto",
+        )
+
+    try:
+        identity = await link_identity(
+            db,
+            tenant=tenant,
+            contact=contact,
+            kind=body.kind,
+            channel=body.channel,
+            external_id=body.external_id,
+        )
+        await db.commit()
+        await db.refresh(identity)
+        return identity
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ese identificador ya pertenece a otro contacto",
+        ) from None
+
+
+@router.delete(
+    "/tenants/{tenant_id}/identities/{identity_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def delete_contact_identity(
+    tenant_id: UUID,
+    identity_id: UUID,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Desvincula una puerta: el contacto sigue intacto en su núcleo."""
+    await _get_tenant_or_404(db, tenant_id)
+
+    identity = (
+        await db.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.id == identity_id,
+                ChannelIdentity.tenant_id == tenant_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if identity is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Identidad no encontrada",
+        )
+
+    await db.delete(identity)
+    await db.commit()
 
 
 # ── Link de pago (MercadoPago Checkout Pro) ────────────────────────────────

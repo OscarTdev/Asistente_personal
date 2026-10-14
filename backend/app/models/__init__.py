@@ -1,5 +1,6 @@
 from .base import Base
 from .catalog_items import CatalogItem
+from .channel_identity import ChannelIdentity
 from .contacts import Contact
 from .conversations import Conversation
 from .events import Event
@@ -32,4 +33,5 @@ __all__ = [
     "FollowUp",
     "Subscription",
     "PaymentMethod",
+    "ChannelIdentity",
 ]

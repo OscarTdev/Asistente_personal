@@ -16,6 +16,9 @@ class SelfMessageIgnored(ChannelParseError):
 
 class Channel(ABC):
     name: str  # se sobrescribe en la subclase
+    # Canal lógico para las identidades (channel_identities): "whatsapp",
+    # "telegram", "web"... — independiente de la implementación (evolution).
+    identity_channel: str = "whatsapp"
 
     @abstractmethod
     async def parse_incoming(self, payload: dict[str, Any]) -> IncomingMessage:
