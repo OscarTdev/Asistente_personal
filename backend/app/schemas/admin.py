@@ -16,6 +16,13 @@ class TenantWhatsappUpdate(BaseModel):
     wa_id: str | None = Field(default=None, pattern=r"^[0-9]{5,20}$")
 
 
+class TenantUpdateRequest(BaseModel):
+    """Edición de un cliente registrado: nombre del negocio/persona y del bot."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    bot_name: str | None = Field(default=None, min_length=1, max_length=50)
+
+
 class CheckoutLinkRequest(BaseModel):
     send_to_whatsapp: bool = False
 

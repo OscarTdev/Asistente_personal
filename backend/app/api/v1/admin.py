@@ -47,6 +47,7 @@ from app.schemas.admin import (
     PlanChangeRequest,
     TenantAdminDetail,
     TenantAdminSummary,
+    TenantUpdateRequest,
     TenantWhatsappUpdate,
 )
 from app.services.entitlements import apply_plan
@@ -246,6 +247,32 @@ async def change_plan(
     """Cambia el plan de un cliente y sincroniza sus servicios."""
     tenant = await _get_tenant_or_404(db, tenant_id)
     tenant = await apply_plan(db, tenant_id=tenant.id, plan=body.plan)
+    return await _tenant_detail(db, tenant)
+
+
+@router.patch("/tenants/{tenant_id}", response_model=TenantAdminDetail)
+async def update_tenant(
+    tenant_id: UUID,
+    body: TenantUpdateRequest,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> TenantAdminDetail:
+    """Edita los datos de un cliente: nombre del negocio/persona y del bot.
+
+    El nombre editado es el que llevan las cotizaciones que se generen a
+    partir de ese momento (encabezado y pie del PDF).
+    """
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    if body.name is not None:
+        tenant.name = body.name.strip()
+    if body.bot_name is not None:
+        bot_name = body.bot_name.strip()
+        if bot_name:
+            tenant.bot_name = bot_name
+
+    await db.commit()
+    await db.refresh(tenant)
     return await _tenant_detail(db, tenant)
 
 

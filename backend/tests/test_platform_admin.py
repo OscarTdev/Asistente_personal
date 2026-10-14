@@ -883,6 +883,64 @@ async def test_expiry_job_ignores_active_period(
     assert tenant.plan == "premium"
 
 
+# ── Edición de clientes (el admin corrige nombres registrados) ─────────────
+
+
+async def test_update_tenant_edits_name_and_bot(
+    client: AsyncClient,
+    platform_admin: User,
+    tenant: Tenant,
+):
+    """El admin edita el nombre del negocio/persona y cómo se llama el bot."""
+    response = await client.patch(
+        f"/api/v1/admin/tenants/{tenant.id}",
+        headers=_headers(platform_admin),
+        json={"name": "Instalaciones Gómez SAS", "bot_name": "Chispa"},
+    )
+    assert response.status_code == HTTPStatus.OK
+    data = response.json()
+    assert data["name"] == "Instalaciones Gómez SAS"
+    assert data["bot_name"] == "Chispa"
+
+    # Persistencia: releído desde la BD
+    detail = await client.get(
+        f"/api/v1/admin/tenants/{tenant.id}", headers=_headers(platform_admin)
+    )
+    assert detail.json()["name"] == "Instalaciones Gómez SAS"
+    assert detail.json()["bot_name"] == "Chispa"
+
+
+async def test_update_tenant_partial_fields(
+    client: AsyncClient, platform_admin: User, tenant: Tenant
+):
+    """Editar solo uno no toca el otro."""
+    original_bot = (
+        await client.get(
+            f"/api/v1/admin/tenants/{tenant.id}", headers=_headers(platform_admin)
+        )
+    ).json()["bot_name"]
+
+    response = await client.patch(
+        f"/api/v1/admin/tenants/{tenant.id}",
+        headers=_headers(platform_admin),
+        json={"name": "Solo el negocio"},
+    )
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["name"] == "Solo el negocio"
+    assert response.json()["bot_name"] == original_bot
+
+
+async def test_update_tenant_requires_platform_admin(
+    client: AsyncClient, admin_user: User, tenant: Tenant
+):
+    response = await client.patch(
+        f"/api/v1/admin/tenants/{tenant.id}",
+        headers=_headers(admin_user),
+        json={"name": "Hackeado"},
+    )
+    assert response.status_code == HTTPStatus.FORBIDDEN
+
+
 # ── Link de pago (Checkout Pro) ────────────────────────────────────────────
 
 
