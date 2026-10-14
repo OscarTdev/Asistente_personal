@@ -58,7 +58,9 @@ Actúa como un ingeniero de software senior (backend Python/FastAPI y frontend R
 ## Reglas de arquitectura
 - Monolito modular. Nada de microservicios.
 - **Todas las tablas llevan `tenant_id`** desde el inicio.
-- **Un número de WhatsApp compartido**: el remitente identifica al tenant (`tenants.wa_id`) y enruta a SU contexto; número desconocido → tenant del slug. Conectar/desconectar el número lo gestiona solo el admin de la plataforma.
+- **Un número de WhatsApp compartido (Enmienda A)**: el remitente se resuelve por `channel_identities` (creación perezosa del legado `wa_id`) y cae en SU tenant. Desconocidos → **tenant de plataforma** (`is_platform`, onboarding y soporte). **No existe X-Tenant-Slug**. Conectar/desconectar el número lo gestiona solo el admin de la plataforma.
+- **Registro por chat**: persona natural (sin NIT) o negocio/empresa (NIT con dígito DIAN, `core/nit.py`); al terminar crea SU tenant en trial.
+- **Modo atención al cliente** (`tenants.customer_mode`, apagado por defecto): el negocio decide si su bot contesta a clientes conocidos; por defecto calla y solo registra.
 - API versionada bajo `/api/v1`.
 - Los webhooks responden 200 de inmediato y procesan en la cola. El de WhatsApp es **fail-closed**: exige la cabecera `X-Webhook-Secret` (secreto compartido con Evolution).
 - **Planes y entitlements**: el plan del tenant (trial/freemium/premium) decide qué servicios puede tener encendidos; nadie activa un servicio fuera del plan (`services/entitlements.py`).
