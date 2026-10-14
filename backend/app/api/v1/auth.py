@@ -149,5 +149,6 @@ async def login(
             role=user.role,
             tenant_id=user.tenant_id,
             bot_name=tenant.bot_name,
+            is_platform_admin=user.is_platform_admin,
         ),
     )
