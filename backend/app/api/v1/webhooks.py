@@ -230,8 +230,12 @@ async def _apply_mercadopago_payment(payment_id: str) -> None:
             )
             db.add(event)
             try:
-                await db.flush()
+                # Guardar-primero (spec §11): COMMIT del evento ANTES de procesar.
+                # Con solo flush(), el rollback del fallo se llevaba también el
+                # registro y la auditoría/reintentos perdían la fila.
+                await db.commit()
             except IntegrityError:
+                # Carrera: MP reenvió y otro worker ya registró el pago
                 await db.rollback()
                 logger.info("Evento MP %s ya registrado: idempotente", payment_id)
                 return
