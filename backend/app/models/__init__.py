@@ -10,12 +10,14 @@ from .events import Event
 from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
 from .messages import Message
+from .note import Note
 from .onboarding_session import OnboardingSession
 from .payment_method import PaymentMethod
 from .payment_webhook_event import PaymentWebhookEvent
 from .pending_action import PendingAction
 from .quote_items import QuoteItem
 from .quotes import Quote
+from .reminder import Reminder
 from .service_usage import ServiceUsage
 from .subscriptions import Subscription
 from .tenant_branding import TenantBranding
@@ -48,4 +50,6 @@ __all__ = [
     "TenantBranding",
     "PendingAction",
     "PaymentWebhookEvent",
+    "Note",
+    "Reminder",
 ]

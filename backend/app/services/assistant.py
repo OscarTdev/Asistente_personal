@@ -26,6 +26,11 @@ INTENCIONES:
   Ejemplos: "cotizame 3 tomacorrientes y 20 metros de cable", "cotización para Juliana: dos breakers de 30A".
 - "invoice": el dueño pide generar una CUENTA DE COBRO (para cobrar un trabajo ya hecho).
   Ejemplos: "cuenta de cobro para Juliana por 500 mil", "generame una cuenta de cobro por la instalación".
+- "note": el dueño quiere guardar, ver, buscar o borrar UNA NOTA.
+  Ejemplos: "guarda una nota: comprar 20 metros de cable", "qué notas tengo", "busca la nota del cable", "borra la nota del cable".
+- "reminder": el dueño pide que le RECUERDES algo en una fecha.
+  Ejemplos: "recuérdame llamar a Juliana el jueves", "recuérdame comprar cable mañana a las 3", "no olvides revisar el tablero el viernes".
+  Para "reminder", extrae la fecha/hora como ISO 8601 en "remind_at" y pon el qué recordar en "message_text".
 - "confirm": el dueño responde a una pregunta del asistente (SÍ/NO, enviar/no enviar).
   Ejemplos: "sí envíala", "dale", "ok", "claro", "no", "después", "envíala".
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.

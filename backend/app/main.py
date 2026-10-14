@@ -35,27 +35,66 @@ async def _followup_loop() -> None:
 
 
 async def _subscriptions_loop() -> None:
-    """Vence suscripciones premium cuyo periodo terminó (ARQ en producción).
-
-    Cada hora revisa los tenants premium: si su suscripción activa ya venció,
-    la fila pasa a 'past_due' y el tenant baja a freemium (o trial si no
-    tiene método de pago en archivo).
-    """
+    """Vence suscripciones premium y envía recordatorios programados."""
     import asyncio
 
     from app.core.database import SessionFactory
     from app.services.entitlements import expire_subscriptions
+    from app.services.notes import due_reminders, mark_reminder_sent
 
     await asyncio.sleep(180)  # arranque en frío
     while True:
         try:
             async with SessionFactory() as db:
+                # 1) Suscripciones vencidas
                 expired = await expire_subscriptions(db)
                 if expired:
                     logger.info("Suscripciones vencidas: %d", expired)
+
+                # 2) Recordatorios que ya llegaron a su hora
+                for reminder in await due_reminders(db):
+                    try:
+                        from sqlalchemy import select
+
+                        from app.channels import get_channel
+                        from app.models import Contact, Tenant
+
+                        tenant = (
+                            await db.execute(
+                                select(Tenant).where(Tenant.id == reminder.tenant_id)
+                            )
+                        ).scalar_one()
+                        # Buscar el contacto del dueño (wa_id del tenant)
+                        if not tenant.wa_id:
+                            continue
+                        owner_contact = (
+                            await db.execute(
+                                select(Contact).where(
+                                    Contact.tenant_id == tenant.id,
+                                    Contact.wa_id == tenant.wa_id,
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if owner_contact is None:
+                            continue
+
+                        channel = get_channel("evolution")
+                        await channel.send_text(
+                            owner_contact.wa_id,
+                            f"⏰ Recordatorio: {reminder.content}",
+                        )
+                        await mark_reminder_sent(db, reminder)
+                        logger.info(
+                            "Recordatorio %s enviado (tenant %s)",
+                            reminder.id, tenant.slug,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "No se pudo enviar el recordatorio %s", reminder.id
+                        )
         except Exception:
-            logger.exception("Falló la revisión de suscripciones vencidas")
-        await asyncio.sleep(3600)
+            logger.exception("Falló el ciclo de suscripciones/recordatorios")
+        await asyncio.sleep(300)  # cada 5 minutos
 
 
 @asynccontextmanager

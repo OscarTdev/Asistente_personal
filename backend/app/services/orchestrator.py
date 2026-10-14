@@ -260,6 +260,153 @@ async def _handle_send_message(
     logger.info("Mensaje enviado por encargo del dueño (contacto %s)", target.id)
 
 
+async def _handle_note(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    text: str,
+) -> None:
+    """Notas del dueño: guardar, listar, buscar y borrar por chat (spec §13)."""
+    from app.services import notes as notes_service
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    action = notes_service.detect_note_action(text)
+
+    if action == "save":
+        # Extraer el contenido: lo que va después del comando
+        content = text.strip()
+        for prefix in ("guarda una nota:", "guarda una nota", "guárdame:", "guárdame",
+                       "apunta:", "apunta", "anota:", "anota", "recuerda que",
+                       "toma nota:", "toma nota", "nota:"):
+            if content.lower().startswith(prefix.lower()):
+                content = content[len(prefix):].strip()
+                break
+        if not content:
+            await tell_owner("¿Qué quieres que te anote?")
+            return
+        note = await notes_service.save_note(
+            db, tenant_id=tenant.id, content=content
+        )
+        await tell_owner(f"📝 Anotado: «{note.content}»")
+
+    elif action == "list":
+        items = await notes_service.list_notes(db, tenant_id=tenant.id)
+        if not items:
+            await tell_owner(
+                "No tienes notas. Dime «guarda una nota: ...» para empezar."
+            )
+        else:
+            lines = [f"📝 Tus últimas {len(items)} notas:\n"]
+            for i, note in enumerate(items, 1):
+                short = note.content[:80] + ("..." if len(note.content) > 80 else "")
+                lines.append(f"{i}. {short}")
+            await tell_owner("\n".join(lines))
+
+    elif action == "search":
+        # Extraer el término: lo que va después de "busca" / "encuentra"
+        query = text.lower()
+        for prefix in ("busca la nota", "busca", "encuentra", "hay alguna nota"):
+            if query.startswith(prefix):
+                query = text[len(prefix):].strip()
+                break
+        if not query:
+            await tell_owner("¿Qué nota buscas?")
+            return
+        items = await notes_service.search_notes(
+            db, tenant_id=tenant.id, query=query
+        )
+        if not items:
+            await tell_owner(f"No encontré notas sobre «{query}».")
+        else:
+            lines = [f"🔍 Encontré {len(items)} nota(s):\n"]
+            for note in items:
+                lines.append(f"• {note.content[:100]}")
+            await tell_owner("\n".join(lines))
+
+    elif action == "delete":
+        query = text.lower()
+        for prefix in ("borra la nota", "borra", "elimina la nota",
+                       "elimina", "quita la nota", "quita"):
+            if query.startswith(prefix):
+                query = text[len(prefix):].strip()
+                break
+        # Quitar artículos/preposiciones del inicio: «del cable» → «cable»
+        for filler in ("del ", "de ", "la ", "el ", "los ", "las ", "sobre "):
+            if query.lower().startswith(filler):
+                query = query[len(filler):].strip()
+                break
+        if not query:
+            await tell_owner("¿Qué nota quieres borrar?")
+            return
+        deleted = await notes_service.soft_delete_note(
+            db, tenant_id=tenant.id, query=query
+        )
+        if deleted:
+            await tell_owner(f"🗑️ Borré {deleted} nota(s) sobre «{query}».")
+        else:
+            await tell_owner(f"No encontré notas sobre «{query}» para borrar.")
+
+
+async def _handle_reminder(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Recordatorios: el bot escribe al dueño en la fecha programada."""
+    from datetime import datetime as dt
+
+    from app.services import notes as notes_service
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    content = (intent.message_text or "").strip()
+    if not content:
+        # Extraer el contenido del texto original
+        content = intent.description or "Recordatorio"
+    if not content:
+        await tell_owner("¿Qué quieres que te recuerde?")
+        return
+
+    # Parsear la fecha del intent (ISO 8601) o usar +1 día como default
+    from datetime import timedelta
+
+    remind_at = None
+    if intent.remind_at:
+        try:
+            remind_at = dt.fromisoformat(intent.remind_at)
+        except ValueError:
+            pass
+    if remind_at is None:
+        # Default: mañana a las 8:00 AM Colombia (UTC-5 → 13:00 UTC)
+        now = datetime.now(UTC)
+        tomorrow = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
+        remind_at = tomorrow
+
+    await notes_service.save_reminder(
+        db, tenant_id=tenant.id, content=content, remind_at=remind_at
+    )
+    # Formatear la fecha para mostrar (hora Colombia = UTC-5)
+    colombia_time = remind_at - timedelta(hours=5)
+    when = colombia_time.strftime("%d/%m a las %I:%M %p")
+    await tell_owner(f"⏰ Listo: te recordaré «{content}» el {when}.")
+
+
 async def _handle_confirmation(
     db: AsyncSession,
     *,
@@ -1059,6 +1206,20 @@ async def handle_incoming(
                     conversation=conversation, wa_id=wa_id, intent=intent,
                 )
                 return
+
+        if intent.intention == "note":
+            await _handle_note(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, text=text,
+            )
+            return
+
+        if intent.intention == "reminder":
+            await _handle_reminder(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
 
         if intent.intention == "send_message":
             await _handle_send_message(
