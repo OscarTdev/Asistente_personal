@@ -201,30 +201,48 @@ async def test_prospect_onboarding_full_flow(
         conversation=chat["conversation"],
     )
 
-    # 1) «¿Cómo quieres que me llame?»
+    # 1) «Acepta la política» (consentimiento)
     await _call()
-    assert "me llame" in channel.sent[0][1]
-    await db_session.refresh(chat["contact"])
-    assert chat["contact"].onboarding_state == "ask_bot_name"
+    assert "acepto" in channel.sent[0][1].lower()
 
-    # 2) «¿Eres persona natural o negocio?»
+    # 2) Acepta → pide nombre del bot
+    chat["message"].content = "acepto"
+    await db_session.commit()
+    await _call()
+    assert "llame" in channel.sent[1][1].lower()
+
+    # 3) Nombre del bot → tipo de cuenta
     chat["message"].content = "Aura"
     await db_session.commit()
     await _call()
-    assert "persona natural" in channel.sent[1][1]
-    await db_session.refresh(chat["contact"])
-    assert chat["contact"].onboarding_state == "ask_account_type:Aura"
+    assert "persona natural" in channel.sent[2][1].lower()
 
-    # 3) Persona natural → SIN NIT, directo al nombre
+    # 4) Persona natural → SIN NIT, pide nombre
     chat["message"].content = "1"
     await db_session.commit()
     await _call()
-    assert "prefieres que te llame" in channel.sent[2][1]
-    await db_session.refresh(chat["contact"])
-    assert chat["contact"].onboarding_state == "ask_owner_name:Aura:personal:"
+    assert "llame" in channel.sent[3][1].lower()
 
-    # 4) Nombre del dueño → tenant creado en trial + menú de servicios
+    # 5) Nombre → ciudad
     chat["message"].content = "Juan Pérez"
+    await db_session.commit()
+    await _call()
+    assert "ciudad" in channel.sent[4][1].lower()
+
+    # 6) Ciudad → correo
+    chat["message"].content = "Medellín"
+    await db_session.commit()
+    await _call()
+    assert "correo" in channel.sent[5][1].lower()
+
+    # 7) Correo → preferencia
+    chat["message"].content = "juan@ejemplo.com"
+    await db_session.commit()
+    await _call()
+    assert "texto" in channel.sent[6][1].lower()
+
+    # 8) Preferencia → crea el tenant
+    chat["message"].content = "1"
     await db_session.commit()
     await _call()
 
@@ -255,9 +273,10 @@ async def test_prospect_onboarding_full_flow(
     await db_session.refresh(chat["contact"])
     assert chat["contact"].onboarding_state is None
 
-    menu = channel.sent[3][1]
+    menu = channel.sent[7][1]
     assert "¿Con qué quieres empezar?" in menu
     assert "Aura" in menu
+    assert "contraseña" in menu.lower() or "token=" in menu
 
 
 async def test_prospect_business_flow_asks_and_validates_nit(
@@ -281,28 +300,26 @@ async def test_prospect_business_flow_asks_and_validates_nit(
             conversation=chat["conversation"],
         )
 
-    await _say("Hola")    # bienvenida
+    await _say("Hola")    # bienvenida + consentimiento
+    await _say("acepto")  # → pide nombre del bot
     await _say("Chispa")  # → pregunta el tipo de cuenta
     await _say("2")       # negocio → pide NIT
-    await db_session.refresh(chat["contact"])
-    assert chat["contact"].onboarding_state == "ask_nit:Chispa"
     assert "NIT" in channel.sent[-1][1]
 
     # NIT con dígito incorrecto → re-pregunta, no avanza
     await _say("900123456-7")  # el DV correcto de esa base es 6
-    await db_session.refresh(chat["contact"])
-    assert chat["contact"].onboarding_state == "ask_nit:Chispa"
     assert "No pude validar" in channel.sent[-1][1]
 
     # NIT válido → pide el nombre
     await _say("900.123.456-6")
-    await db_session.refresh(chat["contact"])
-    assert (
-        chat["contact"].onboarding_state
-        == "ask_owner_name:Chispa:business:900123456-6"
-    )
+    assert "llame" in channel.sent[-1][1].lower()
 
+    # Completa el resto del registro
     await _say("Instalaciones El Rayo SAS")
+    await _say("Cali")
+    await _say("admin@rayo.com")
+    await _say("3")
+
     new_tenant = (
         await db_session.execute(
             select(Tenant).where(Tenant.slug == "instalaciones-el-rayo-sas")

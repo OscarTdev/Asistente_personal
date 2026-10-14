@@ -317,7 +317,7 @@ async def test_onboarding_clears_prospect_identity(
     )
     await db_session.commit()
 
-    # Flujo de onboarding completo: nombre del bot → nombre del dueño
+    # Flujo de onboarding completo (nuevo: consentimiento → datos → crear)
     async def fake_intent(*, tenant, text):
         from app.schemas.assistant import AssistantIntent
 
@@ -326,28 +326,23 @@ async def test_onboarding_clears_prospect_identity(
     monkeypatch.setattr(
         "app.services.assistant.detect_intent", fake_intent
     )
-    await orchestrator.handle_incoming(
-        db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
-        message=message, contact=contact, conversation=conversation,
-    )
-    message.content = "Aura"
-    await db_session.commit()
-    await orchestrator.handle_incoming(
-        db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
-        message=message, contact=contact, conversation=conversation,
-    )
-    message.content = "1"  # persona natural → sin NIT
-    await db_session.commit()
-    await orchestrator.handle_incoming(
-        db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
-        message=message, contact=contact, conversation=conversation,
-    )
-    message.content = "Juan Pérez"
-    await db_session.commit()
-    await orchestrator.handle_incoming(
-        db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
-        message=message, contact=contact, conversation=conversation,
-    )
+
+    async def _step(text: str) -> None:
+        message.content = text
+        await db_session.commit()
+        await orchestrator.handle_incoming(
+            db_session, tenant=tenant, channel=channel,  # type: ignore[arg-type]
+            message=message, contact=contact, conversation=conversation,
+        )
+
+    await _step("Hola")       # bienvenida + consentimiento
+    await _step("acepto")    # acepta → nombre del bot
+    await _step("Aura")      # → tipo de cuenta
+    await _step("1")         # persona natural → nombre
+    await _step("Juan Pérez") # → ciudad
+    await _step("Medellín")  # → correo
+    await _step("j@j.com")   # → preferencia
+    await _step("1")         # texto → CREA
 
     # El tenant propio existe y su identidad apunta a él como dueño
     new_tenant = (

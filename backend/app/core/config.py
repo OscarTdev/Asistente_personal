@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # desconocidos — onboarding y soporte. Sin X-Tenant-Slug: el remitente
     # se resuelve por su número, no por parámetros que controla el emisor.
     platform_tenant_slug: str = "plataforma"
+    # URL base del panel para el enlace de un solo uso del onboarding
+    panel_base_url: str = "http://localhost:5173"
 
     # Webhook de WhatsApp: secreto compartido con Evolution (fail-closed,
     # sin él el endpoint responde 401). Se configura como cabecera del

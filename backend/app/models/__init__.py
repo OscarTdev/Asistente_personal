@@ -1,12 +1,14 @@
 from .base import Base
 from .catalog_items import CatalogItem
 from .channel_identity import ChannelIdentity
+from .consent import Consent
 from .contacts import Contact
 from .conversations import Conversation
 from .events import Event
 from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
 from .messages import Message
+from .onboarding_session import OnboardingSession
 from .payment_method import PaymentMethod
 from .quote_items import QuoteItem
 from .quotes import Quote
@@ -34,4 +36,6 @@ __all__ = [
     "Subscription",
     "PaymentMethod",
     "ChannelIdentity",
+    "Consent",
+    "OnboardingSession",
 ]

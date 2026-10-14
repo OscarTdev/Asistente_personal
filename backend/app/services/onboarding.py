@@ -2,43 +2,62 @@
 
 Un número desconocido (prospecto: un técnico futuro cliente de la
 plataforma) le escribe al bot → el asistente se presenta, pregunta cómo
-quiere que lo llamen, registra sus datos y crea SU tenant (plan trial)
-con su número como llave de enrutamiento. A partir del siguiente mensaje,
-habla con su propio asistente en su propio contexto.
+quiere que lo llamen, registra sus datos paso a paso y crea SU tenant
+(plan trial) con su número como llave de enrutamiento. Al terminar,
+ofrece sus servicios y le envía el enlace para crear la contraseña del
+panel — NUNCA se pide la contraseña por chat (D7).
 
-Los clientes de los dueños (contactos con cotizaciones o seguimientos)
-nunca entran a onboarding: sus respuestas quedan registradas y el bot
-permanece en silencio con ellos.
+La máquina de estados vive en `onboarding_sessions` (paso actual +
+datos acumulados en JSONB, expiración, reanudable). El contacto del
+prospecto vive en el tenant de plataforma; el nuevo dueño queda routado
+a su propio contexto desde el siguiente mensaje.
 """
 
 import logging
 import re
 import unicodedata
 import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels.base import Channel
+from app.core.config import get_settings
 from app.core.nit import clean_nit, validate_nit
-from app.models import Contact, Conversation, Message, Tenant
+from app.models import (
+    Consent,
+    Contact,
+    Conversation,
+    Message,
+    OnboardingSession,
+    Tenant,
+)
 from app.services.entitlements import apply_plan
 
 logger = logging.getLogger(__name__)
 
-# Estados del onboarding (contacts.onboarding_state)
-ASK_BOT_NAME = "ask_bot_name"
-# Cada estado lleva sus datos parciales tras ":" (el nombre puede traer ":",
-# así que el prefijo se pela con startswith y el resto con rsplit).
-ASK_ACCOUNT_TYPE_PREFIX = "ask_account_type:"
-ASK_NIT_PREFIX = "ask_nit:"
-ASK_OWNER_NAME_PREFIX = "ask_owner_name:"  # <bot>:<tipo de cuenta>:<nit>
+# Expiración de la sesión de onboarding: 24 horas para completar el registro
+SESSION_TTL = timedelta(hours=24)
+# Expiración del enlace de un solo uso para la contraseña
+PASSWORD_TOKEN_MINUTES = 30
+
+# Versión de la política de privacidad que se acepta
+POLICY_VERSION = "1.0"
 
 _WELCOME = (
     "¡Hola! 👋 Soy tu asistente personal: te ayudo a cotizar, a escribirle "
     "a tus clientes y a que no se te escape ni un peso.\n\n"
-    "¿Cómo quieres que me llame?"
+    "Antes de empezar, necesito que aceptes nuestra política de "
+    "tratamiento de datos (Ley 1581). Es rápida, lo prometo.\n\n"
+    "Responde «acepto» para continuar."
 )
+_CONSENT_ASKED = (
+    "Para registrarte necesito tu consentimiento para el tratamiento de "
+    "tus datos personales. Responde «acepto» para continuar."
+)
+_ASK_BOT_NAME = "¡Gracias! ¿Cómo quieres que me llame?"
 _ASK_ACCOUNT_TYPE = (
     "¡Un gusto! Antes de empezar: ¿eres 1️⃣ persona natural "
     "o 2️⃣ negocio o empresa? (Responde 1 o 2)"
@@ -53,9 +72,34 @@ _NIT_RETRY = (
     "(ej: 900.123.456-7) o escribe «después» para dejarlo pendiente."
 )
 _ASK_NAME = (
-    "Última pregunta: ¿cómo prefieres que te llame? "
+    "¿Cómo prefieres que te llame? "
     "(tu nombre o el de tu negocio)"
 )
+_ASK_CITY = "¿En qué ciudad operas? (ej: Medellín, Bogotá, Cali)"
+_ASK_EMAIL = (
+    "¿Cuál es tu correo electrónico? Te enviaremos la cotizaciones "
+    "y el acceso al panel. (Si no tienes ahora, escribe «después»)"
+)
+_EMAIL_RETRY = "Ese correo no parece válido. Revísalo o escribe «después»."
+_ASK_RESPONSE_PREF = (
+    "Última pregunta: ¿prefieres que te responda por 1️⃣ texto, "
+    "2️⃣ audio o 3️⃣ automático? (Responde 1, 2 o 3)"
+)
+_PANEL_LINK_TEMPLATE = (
+    "¡Listo! Ya soy {bot_name} 🎉\n\n"
+    "Tu cuenta está creada. Esto es lo que puedo hacer por ti:\n\n"
+    "📄 Cotizaciones — pídeme materiales con cantidades y te armo la "
+    "cotización en PDF\n"
+    "📨 Mensajes — «mandale un mensaje de buenos días a Juliana»\n"
+    "📅 Seguimiento de cotizaciones — escribo a tus clientes a los 3 y 7 "
+    "días (con el plan Premium)\n\n"
+    "Para acceder a tu panel de administración y configurar tu "
+    "catálogo, crea tu contraseña aquí (vence en 30 minutos):\n\n"
+    "{panel_url}\n\n"
+    "¿Con qué quieres empezar?"
+)
+
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
 def _slugify(value: str) -> str:
@@ -63,19 +107,6 @@ def _slugify(value: str) -> str:
     value = value.encode("ascii", "ignore").decode("ascii")
     value = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
     return value.strip("-")[:50] or "cliente"
-
-
-def _services_menu(bot_name: str) -> str:
-    return (
-        f"¡Listo! Ya soy {bot_name} 🎉\n\n"
-        "Esto es lo que puedo hacer por ti:\n\n"
-        "📄 Cotizaciones — pídeme materiales con cantidades y te armo la "
-        "cotización en PDF\n"
-        "📨 Mensajes — «mandale un mensaje de buenos días a Juliana»\n"
-        "📅 Seguimiento de cotizaciones — escribo a tus clientes a los 3 y 7 "
-        "días de cada cotización enviada (con el plan Premium)\n\n"
-        "¿Con qué quieres empezar?"
-    )
 
 
 async def _send_out(
@@ -117,6 +148,52 @@ async def _unique_slug(db: AsyncSession, base: str) -> str:
         suffix += 1
 
 
+def _generate_panel_token(tenant_id) -> str:
+    """Token de un solo uso para crear la contraseña del panel (D7).
+
+    JWT con caducidad corta: NUNCA se pide la contraseña por chat.
+    """
+    from app.core.security import create_access_token
+
+    # El token lleva el propósito + el tenant aún no existe: usamos un
+    # identificador efímero ligado al número del dueño
+    return create_access_token(
+        user_id=uuid.UUID(int=0),  # no es un usuario real
+        tenant_id=tenant_id,
+        role="onboarding",
+        expires_delta=timedelta(minutes=PASSWORD_TOKEN_MINUTES),
+    )
+
+
+async def _get_or_create_session(
+    db: AsyncSession, *, contact: Contact
+) -> OnboardingSession:
+    """Obtiene la sesión activa del contacto o crea una nueva."""
+    session = (
+        await db.execute(
+            select(OnboardingSession)
+            .where(
+                OnboardingSession.contact_id == contact.id,
+                OnboardingSession.is_active.is_(True),
+                OnboardingSession.expires_at > datetime.now(UTC),
+            )
+            .order_by(OnboardingSession.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if session is not None:
+        return session
+    session = OnboardingSession(
+        contact_id=contact.id,
+        step="consent",
+        data={},
+        expires_at=datetime.now(UTC) + SESSION_TTL,
+    )
+    db.add(session)
+    await db.flush()
+    return session
+
+
 async def start_onboarding(
     db: AsyncSession,
     *,
@@ -126,8 +203,14 @@ async def start_onboarding(
     tenant: Tenant,
 ) -> None:
     """Arranca el registro conversacional de un prospecto nuevo."""
-    contact.onboarding_state = ASK_BOT_NAME
+    # Marca el contacto para que el orquestador sepa que está en onboarding
+    contact.onboarding_state = "in_progress"
     await db.commit()
+
+    # Crea (o reusa) la sesión
+    await _get_or_create_session(db, contact=contact)
+    await db.commit()
+
     await _send_out(
         db,
         tenant_id=tenant.id,
@@ -148,9 +231,10 @@ async def continue_onboarding(
     tenant: Tenant,
     text: str,
 ) -> None:
-    """Un paso del registro: nombre del bot → datos del dueño → crear tenant."""
-    state = contact.onboarding_state or ""
+    """Un paso del registro: cada respuesta avanza la máquina de estados."""
+    session = await _get_or_create_session(db, contact=contact)
     answer = text.strip()
+    data: dict[str, Any] = dict(session.data or {})
 
     async def ask(question: str) -> None:
         await _send_out(
@@ -162,67 +246,133 @@ async def continue_onboarding(
             text=question,
         )
 
-    if state == ASK_BOT_NAME:
-        if not answer:
-            await ask(_WELCOME)
-            return
-        bot_name = answer[:30]
-        contact.onboarding_state = f"{ASK_ACCOUNT_TYPE_PREFIX}{bot_name}"
+    async def save_step(step: str) -> None:
+        session.step = step
+        session.data = data
         await db.commit()
+
+    # ── Paso: consentimiento ─────────────────────────────────────────────
+    if session.step == "consent":
+        if answer.lower().strip(" .!") in ("acepto", "aceptar", "si", "sí", "ok"):
+            # Registrar el consentimiento (Ley 1581)
+            db.add(
+                Consent(
+                    tenant_id=tenant.id,
+                    contact_id=contact.id,
+                    consent_type="privacy_policy",
+                    policy_version=POLICY_VERSION,
+                    channel="whatsapp",
+                )
+            )
+            await save_step("bot_name")
+            await ask(_ASK_BOT_NAME)
+            return
+        await ask(_CONSENT_ASKED)
+        return
+
+    # ── Paso: nombre del asistente ───────────────────────────────────────
+    if session.step == "bot_name":
+        if not answer:
+            await ask(_ASK_BOT_NAME)
+            return
+        data["bot_name"] = answer[:30]
+        await save_step("account_type")
         await ask(_ASK_ACCOUNT_TYPE)
         return
 
-    if state.startswith(ASK_ACCOUNT_TYPE_PREFIX):
-        bot_name = state[len(ASK_ACCOUNT_TYPE_PREFIX) :]
+    # ── Paso: tipo de cuenta ────────────────────────────────────────────
+    if session.step == "account_type":
         choice = answer.lower()
         business_words = ("negocio", "empresa", "compañía", "compania", "pyme")
         if "2" in choice or any(word in choice for word in business_words):
-            # Negocio o empresa → se pide NIT con dígito de verificación
-            contact.onboarding_state = f"{ASK_NIT_PREFIX}{bot_name}"
-            await db.commit()
+            data["account_type"] = "business"
+            await save_step("nit")
             await ask(_ASK_NIT)
             return
         if "1" in choice or any(word in choice for word in ("persona", "natural", "independiente")):
-            # Persona natural → sin NIT, directo al nombre
-            contact.onboarding_state = f"{ASK_OWNER_NAME_PREFIX}{bot_name}:personal:"
-            await db.commit()
+            data["account_type"] = "personal"
+            await save_step("owner_name")
             await ask(_ASK_NAME)
             return
         await ask(_ASK_ACCOUNT_TYPE)
         return
 
-    if state.startswith(ASK_NIT_PREFIX):
-        bot_name = state[len(ASK_NIT_PREFIX) :]
+    # ── Paso: NIT (solo negocio) ─────────────────────────────────────────
+    if session.step == "nit":
         if answer.lower().strip(" .") in ("despues", "después", "luego", "nose", "no sé"):
-            contact.onboarding_state = f"{ASK_OWNER_NAME_PREFIX}{bot_name}:business:"
-            await db.commit()
+            data["nit"] = None
+            await save_step("owner_name")
             await ask(_ASK_NAME)
             return
         if not validate_nit(answer):
             await ask(_NIT_RETRY)
             return
-        nit = clean_nit(answer)
-        contact.onboarding_state = f"{ASK_OWNER_NAME_PREFIX}{bot_name}:business:{nit}"
-        await db.commit()
+        data["nit"] = clean_nit(answer)
+        await save_step("owner_name")
         await ask(_ASK_NAME)
         return
 
-    if state.startswith(ASK_OWNER_NAME_PREFIX):
-        rest = state[len(ASK_OWNER_NAME_PREFIX) :]
-        bot_name, account_type, nit = rest.rsplit(":", 2)
+    # ── Paso: nombre del dueño ──────────────────────────────────────────
+    if session.step == "owner_name":
         if not answer:
             await ask("¿Me repites tu nombre o el de tu negocio?")
             return
+        data["owner_name"] = answer[:60]
+        await save_step("city")
+        await ask(_ASK_CITY)
+        return
 
-        owner_name = answer[:60]
+    # ── Paso: ciudad ────────────────────────────────────────────────────
+    if session.step == "city":
+        if not answer:
+            await ask(_ASK_CITY)
+            return
+        data["city"] = answer[:50]
+        await save_step("email")
+        await ask(_ASK_EMAIL)
+        return
+
+    # ── Paso: correo ─────────────────────────────────────────────────────
+    if session.step == "email":
+        if answer.lower().strip(" .") in ("despues", "después", "luego", "nose", "no sé"):
+            data["email"] = None
+            await save_step("response_pref")
+            await ask(_ASK_RESPONSE_PREF)
+            return
+        if not _EMAIL_RE.match(answer):
+            await ask(_EMAIL_RETRY)
+            return
+        data["email"] = answer.lower()[:100]
+        await save_step("response_pref")
+        await ask(_ASK_RESPONSE_PREF)
+        return
+
+    # ── Paso: preferencia de respuesta ───────────────────────────────────
+    if session.step == "response_pref":
+        choice = answer.lower()
+        if "1" in choice or "texto" in choice:
+            data["response_pref"] = "text"
+        elif "2" in choice or "audio" in choice:
+            data["response_pref"] = "audio"
+        else:
+            data["response_pref"] = "auto"
+        await save_step("create")
+        # Fall through al paso final
+        session.step = "create"
+        session.data = data
+        await db.commit()
+
+    # ── Paso final: crear el tenant ─────────────────────────────────────
+    if session.step == "create":
+        owner_name = data.get("owner_name", "Cliente")
         slug = await _unique_slug(db, owner_name)
         new_tenant = Tenant(
             name=owner_name,
             slug=slug,
-            bot_name=bot_name,
+            bot_name=data.get("bot_name", "Aura"),
             wa_id=contact.wa_id,
-            account_type=account_type,
-            nit=nit or None,
+            account_type=data.get("account_type", "personal"),
+            nit=data.get("nit"),
         )
         db.add(new_tenant)
         await db.flush()
@@ -232,18 +382,28 @@ async def continue_onboarding(
             db, tenant_id=new_tenant.id, plan="trial", provider="system"
         )
 
-        # Deja de ser el contacto-puerta de la plataforma: su identidad de
-        # prospecto se limpia para que su próximo mensaje lo routee a SU
-        # tenant como dueño (y no al fallback como prospecto).
+        # Deja de ser el contacto-puerta de la plataforma
         from app.services.identity import clear_identities
 
         await clear_identities(
             db, channel="whatsapp", external_id=contact.wa_id
         )
 
+        # Cerrar la sesión de onboarding
+        session.is_active = False
         contact.onboarding_state = None
         await db.commit()
-        await ask(_services_menu(bot_name))
+
+        # Generar el enlace de un solo uso para crear la contraseña (D7)
+        settings = get_settings()
+        token = _generate_panel_token(new_tenant.id)
+        panel_url = f"{settings.panel_base_url}/crear-contrasena?token={token}"
+
+        bot_name = data.get("bot_name", "Aura")
+        await ask(_PANEL_LINK_TEMPLATE.format(
+            bot_name=bot_name,
+            panel_url=panel_url,
+        ))
         logger.info(
             "Tenant '%s' creado por onboarding (dueño registrado por wa_id)", slug
         )
