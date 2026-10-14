@@ -35,7 +35,13 @@ class Settings(BaseSettings):
     webhook_secret: str = ""
 
     # Seguimiento de cotizaciones: días de cada ronda (3 y 7 por defecto)
+    # y horario permitido en Colombia (UTC-5 fijo: el país no tiene DST)
     followup_days: str = "3,7"
+    followup_hours: str = "8,19"
+
+    # Agrupación de mensajes (spec §7): varios seguidos = una respuesta
+    debounce_seconds: int = 5
+    debounce_max_wait: int = 20
 
     # MercadoPago (fase 2): vacíos → el pago sigue siendo manual desde el panel.
     # El webhook de pagos responde 200 pero no procesa hasta que existan.

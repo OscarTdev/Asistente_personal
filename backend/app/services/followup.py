@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import exists, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.channels.base import Channel
@@ -42,6 +43,24 @@ def _parse_round_days(raw: str) -> tuple[int, int]:
     if len(parts) < 2 or parts[0] >= parts[1]:
         return 3, 7
     return parts[0], parts[1]
+
+
+def _parse_hours(raw: str) -> tuple[int, int]:
+    try:
+        start, end = (int(piece.strip()) for piece in raw.split(","))
+    except ValueError:
+        return 8, 19
+    if not (0 <= start < end <= 24):
+        return 8, 19
+    return start, end
+
+
+def _within_allowed_hours(now_utc: datetime | None = None) -> bool:
+    """Horario permitido en Colombia (UTC-5 fijo: sin cambio de horario)."""
+    start_hour, end_hour = _parse_hours(get_settings().followup_hours)
+    now = now_utc or datetime.now(UTC)
+    colombia_hour = (now - timedelta(hours=5)).hour
+    return start_hour <= colombia_hour < end_hour
 
 
 async def tenants_with_service(db: AsyncSession) -> list[UUID]:
@@ -79,6 +98,11 @@ async def run_followups(
 
     if channel is None:
         channel = get_channel("evolution")
+
+    # Horario permitido: nunca escribir de madrugada (B9, spec §4.3)
+    if not _within_allowed_hours():
+        logger.info("Seguimiento fuera del horario permitido: no se envía")
+        return result
 
     now = datetime.now(UTC)
     day_first, day_second = _parse_round_days(settings.followup_days)
@@ -134,33 +158,44 @@ async def run_followups(
         name_part = f" {contact.name}" if contact.name else ""
         message = message.format(name_part=name_part, short_id=str(quote.id)[:8])
 
+        # Reclamar ANTES de enviar (B9): UNIQUE(quote_id, round) es el
+        # reclamo — un segundo worker recibe IntegrityError y no duplica.
+        db.add(
+            FollowUp(
+                tenant_id=quote.tenant_id,
+                quote_id=quote.id,
+                contact_id=contact.id,
+                round=round_to_send,
+                message_sent=message,
+            )
+        )
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            continue  # otro worker ya reclamó esta ronda
+
         try:
             await channel.send_text(contact.wa_id, message)
-            db.add(
-                FollowUp(
-                    tenant_id=quote.tenant_id,
-                    quote_id=quote.id,
-                    contact_id=contact.id,
-                    round=round_to_send,
-                    message_sent=message,
-                )
-            )
             await db.commit()
-            await log_service_usage(
-                db,
-                tenant_id=quote.tenant_id,
-                module_key="follow_up",
-                kind="followup",
-                contact_id=contact.id,
-            )
-            if round_to_send == 1:
-                result.round1_sent += 1
-            else:
-                result.round2_sent += 1
         except Exception:
+            # Envío fallido: el rollback libera el reclamo y reintenta después
             await db.rollback()
             result.errors += 1
             # Sin wa_id en logs (Ley 1581)
             logger.exception("Falló el seguimiento de la cotización %s", quote.id)
+            continue
+
+        await log_service_usage(
+            db,
+            tenant_id=quote.tenant_id,
+            module_key="follow_up",
+            kind="followup",
+            contact_id=contact.id,
+        )
+        if round_to_send == 1:
+            result.round1_sent += 1
+        else:
+            result.round2_sent += 1
 
     return result

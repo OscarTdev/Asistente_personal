@@ -24,6 +24,16 @@ def auth_headers(admin_user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.fixture(autouse=True)
+def _always_business_hours(monkeypatch: pytest.MonkeyPatch):
+    """El reloj real no decide los tests: siempre en horario permitido."""
+
+    async def _always(*args, **kwargs):
+        return True
+
+    monkeypatch.setattr("app.services.followup._within_allowed_hours", _always)
+
+
 class FakeChannel(Channel):
     """Canal de prueba: registra los envíos en lugar de llamar a Evolution."""
 

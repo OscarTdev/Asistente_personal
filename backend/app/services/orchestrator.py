@@ -521,6 +521,7 @@ async def handle_incoming(
     message: Message,
     contact: Contact,
     conversation: Conversation,
+    text_override: str | None = None,
 ) -> None:
     """Atiende un mensaje entrante ya persistido.
 
@@ -599,7 +600,8 @@ async def handle_incoming(
         return
 
     wa_id = contact.wa_id
-    text = (message.content or "").strip()
+    # El lote unificado (debounce) llega como text_override; si no, el propio
+    text = (text_override or message.content or "").strip()
 
     try:
         # Sin texto: solo las notas de voz del dueño piden aclaración.

@@ -108,6 +108,14 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     original_get_channel = webhooks_module.get_channel
     webhooks_module.get_channel = lambda name="evolution": _StubChannel()
 
+    # Los tests de API no esperan el debounce (5 s): procesan directo.
+    original_process_message = webhooks_module._process_message
+
+    async def _immediate_process(tenant_id, conversation_id, message_id):
+        await webhooks_module._run_orchestrator(tenant_id, message_id)
+
+    webhooks_module._process_message = _immediate_process
+
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -115,6 +123,7 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
         yield ac
     app.dependency_overrides.clear()
     webhooks_module.get_channel = original_get_channel
+    webhooks_module._process_message = original_process_message
 
 
 @pytest.fixture

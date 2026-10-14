@@ -73,14 +73,41 @@ async def webhook_whatsapp(
             # Redis caído NO rompe el 200 ni la persistencia del mensaje.
             logger.exception("No se pudo publicar el evento %s", event.id)
 
-        # El cerebro conversacional corre en background: el cliente no espera
-        background_tasks.add_task(_run_orchestrator, tenant.id, message.id)
+        # El cerebro corre con agrupación (spec §7): varios mensajes seguidos
+        # de la misma conversación se procesan como uno solo tras una pausa.
+        # Redis caído → procesamiento directo sin agrupar.
+        background_tasks.add_task(
+            _process_message, tenant.id, message.conversation_id, message.id
+        )
 
     return WebhookAck(
         status="ok",
         whatsapp_message_id=message.whatsapp_message_id,
         duplicate=not created,
     )
+
+
+async def _process_message(
+    tenant_id, conversation_id, message_id
+) -> None:
+    """Registra el mensaje en el lote con espera de 5 s (spec §7).
+
+    Si Redis no está disponible, procesa directo: la respuesta inmediata
+    es mejor que ninguna.
+    """
+    from app.services import debounce
+
+    try:
+        await debounce.register_message(
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+        )
+    except Exception:
+        logger.exception(
+            "Agrupación no disponible (¿Redis caído?); procesando directo"
+        )
+        await _run_orchestrator(tenant_id, message_id)
 
 
 async def _run_orchestrator(tenant_id, message_id) -> None:
