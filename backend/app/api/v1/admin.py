@@ -6,10 +6,11 @@ historial de chat de cada tenant.
 """
 
 import logging
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +67,12 @@ from app.services.entitlements import (
 )
 from app.services.identity import link_identity
 from app.services.mercadopago import create_checkout_link
+from app.services.service_engine import (
+    clear_override,
+    list_statuses,
+    set_override,
+    set_status,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -689,6 +696,145 @@ async def create_tenant_checkout_link(
         price_cop=price,
         whatsapp_sent=whatsapp_sent,
     )
+
+
+# ── Motor de servicios: estado global y excepciones (adendo §5) ───────────
+
+
+class ServiceStatusUpdate(BaseModel):
+    status: str  # operational | degraded | down | maintenance
+    message: str | None = None
+
+
+class OverrideCreate(BaseModel):
+    """Excepción por cliente: dar o quitar UN servicio, con motivo."""
+
+    service_key: str
+    allowed: bool
+    reason: str = Field(min_length=3, max_length=500)
+    expires_at: datetime | None = None
+
+
+@router.get("/service-status")
+async def list_service_status(
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Estado global de todos los servicios con fila (sin fila = operativo)."""
+    return await list_statuses(db)
+
+
+@router.put("/service-status/{service_key}")
+async def update_service_status(
+    service_key: str,
+    body: ServiceStatusUpdate,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Interruptor global: operativo, degradado, caído o en mantenimiento."""
+    if body.status not in ("operational", "degraded", "down", "maintenance"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Estado inválido: operational, degraded, down o maintenance",
+        )
+    if service_key not in {m["key"] for m in AVAILABLE_MODULES}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Servicio no encontrado"
+        )
+    await set_status(
+        db,
+        service_key=service_key,
+        status=body.status,
+        message=body.message,
+        source="manual",
+        updated_by=current_user.id,
+    )
+    return {"service_key": service_key, "status": body.status, "message": body.message}
+
+
+@router.get("/tenants/{tenant_id}/service-overrides")
+async def list_tenant_overrides(
+    tenant_id: UUID,
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Las excepciones del cliente (vigentes y vencidas, para auditoría)."""
+    from app.models import TenantServiceOverride
+
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    rows = (
+        await db.execute(
+            select(TenantServiceOverride).where(
+                TenantServiceOverride.tenant_id == tenant.id
+            )
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(r.id),
+            "service_key": r.service_key,
+            "allowed": r.allowed,
+            "reason": r.reason,
+            "expires_at": r.expires_at.isoformat() if r.expires_at else None,
+            "created_by": str(r.created_by) if r.created_by else None,
+        }
+        for r in rows
+    ]
+
+
+@router.put("/tenants/{tenant_id}/service-overrides")
+async def upsert_tenant_override(
+    tenant_id: UUID,
+    body: OverrideCreate,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Dar o quitar un servicio a UN cliente (con motivo; adendo §4)."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    if body.service_key not in {m["key"] for m in AVAILABLE_MODULES}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Servicio no encontrado"
+        )
+    try:
+        row = await set_override(
+            db,
+            tenant_id=tenant.id,
+            service_key=body.service_key,
+            allowed=body.allowed,
+            reason=body.reason,
+            expires_at=body.expires_at,
+            created_by=current_user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    return {
+        "id": str(row.id),
+        "service_key": row.service_key,
+        "allowed": row.allowed,
+        "reason": row.reason,
+        "expires_at": row.expires_at.isoformat() if row.expires_at else None,
+    }
+
+
+@router.delete(
+    "/tenants/{tenant_id}/service-overrides/{service_key}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_tenant_override(
+    tenant_id: UUID,
+    service_key: str,
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Quita la excepción: el plan vuelve a mandar para ese servicio."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    deleted = await clear_override(db, tenant_id=tenant.id, service_key=service_key)
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Excepción no encontrada"
+        )
 
 
 # ── Servicios por plan (la matriz gratis/VIP del super admin) ───────────────

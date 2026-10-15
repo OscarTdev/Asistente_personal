@@ -20,10 +20,12 @@ from .plan_prices import PlanPrice
 from .quote_items import QuoteItem
 from .quotes import Quote
 from .reminder import Reminder
+from .service_status import ServiceStatus
 from .service_usage import ServiceUsage
 from .subscriptions import Subscription
 from .tenant_branding import TenantBranding
 from .tenant_modules import TenantModule
+from .tenant_service_override import TenantServiceOverride
 from .tenants import Tenant
 from .users import User
 
@@ -54,6 +56,8 @@ __all__ = [
     "PaymentWebhookEvent",
     "PlanPrice",
     "PlanEntitlement",
+    "ServiceStatus",
+    "TenantServiceOverride",
     "Note",
     "Reminder",
 ]

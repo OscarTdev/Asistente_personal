@@ -107,6 +107,28 @@ async def _quoter_enabled(db: AsyncSession, tenant_id: UUID) -> bool:
     return bool(result.scalar_one_or_none())
 
 
+async def _module_usable(
+    db: AsyncSession, *, tenant: Tenant, module_key: str
+) -> tuple[bool, str | None]:
+    """Un módulo es usable si el dueño lo encendió Y el motor lo autoriza
+    (adendo §5: interruptor global → excepción → plan). El motivo alimenta
+    el mensaje claro al dueño; nunca silencio técnico."""
+    result = await db.execute(
+        select(TenantModule.is_enabled).where(
+            TenantModule.tenant_id == tenant.id,
+            TenantModule.module_key == module_key,
+        )
+    )
+    if not bool(result.scalar_one_or_none()):
+        return False, None  # apagado por el dueño: el bot simplemente calla
+
+    from app.services.service_engine import service_available
+
+    return await service_available(
+        db, tenant_id=tenant.id, plan=tenant.plan, service_key=module_key
+    )
+
+
 async def _conversation_history(
     db: AsyncSession, conversation_id: UUID, limit: int = 10
 ) -> list[Message]:
@@ -1249,6 +1271,8 @@ async def handle_incoming(
     if not await _quoter_enabled(db, tenant.id):
         return
 
+    # Motor de disponibilidad (adendo §5): si un servicio que el dueño
+    # encendió está caído/en mantenimiento, el bot lo dice con claridad.
     wa_id = contact.wa_id
     # El lote unificado (debounce) llega como text_override; si no, el propio
     text = (text_override or message.content or "").strip()
@@ -1291,6 +1315,13 @@ async def handle_incoming(
                 return
 
         if intent.intention == "note":
+            usable, why = await _module_usable(db, tenant=tenant, module_key="voice_notes")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
             await _handle_note(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, text=text,
@@ -1298,6 +1329,13 @@ async def handle_incoming(
             return
 
         if intent.intention == "reminder":
+            usable, why = await _module_usable(db, tenant=tenant, module_key="reminders")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
             await _handle_reminder(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
@@ -1316,6 +1354,13 @@ async def handle_incoming(
             return
 
         if intent.intention == "quote":
+            usable, why = await _module_usable(db, tenant=tenant, module_key="quoter")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
             await _handle_quote(
                 db,
                 tenant=tenant,
