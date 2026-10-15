@@ -239,6 +239,63 @@ export interface Branding {
   logo_data_url: string | null
 }
 
+// ── Mis clientes (negocios con el asistente) — panel Admin ───────────────────
+
+export interface TenantSummary {
+  id: string
+  name: string
+  slug: string
+  bot_name: string
+  is_active: boolean
+  plan: string
+  plan_label: string
+  plan_price_cop: number
+  wa_id: string | null
+  account_type: string
+  nit: string | null
+  customer_mode: boolean
+  subscription_status: string | null
+  subscription_period_end: string | null
+  enabled_modules: number
+  total_modules: number
+  contacts: number
+  quotes: number
+  messages: number
+  users: number
+}
+
+export interface TenantModuleView {
+  key: string
+  name: string
+  category: string
+  dev_status: string
+  is_enabled: boolean
+  entitled: boolean
+}
+
+export interface TenantPaymentMethod {
+  id: string
+  provider: string
+  brand: string
+  last4: string
+  exp_month: number | null
+  exp_year: number | null
+  is_default: boolean
+}
+
+export interface TenantSubscription {
+  plan_key: string
+  status: string
+  provider: string
+  current_period_end: string | null
+}
+
+export interface TenantDetail extends TenantSummary {
+  modules: TenantModuleView[]
+  payment_methods: TenantPaymentMethod[]
+  subscription: TenantSubscription | null
+}
+
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
 export interface ServiceStat {

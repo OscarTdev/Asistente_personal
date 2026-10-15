@@ -26,6 +26,8 @@ import {
   QuotePage,
   QuoteUpdatePayload,
   Reminder,
+  TenantDetail,
+  TenantSummary,
   WhatsappConnectResult,
   WhatsappStatus,
 } from '../types'
@@ -385,6 +387,45 @@ export function uploadBrandingLogo(
 
 export function deleteBrandingLogo(): Promise<void> {
   return apiFetch<void>('/branding/logo', { method: 'DELETE' })
+}
+
+// ── Mis clientes (negocios con el asistente) — panel Admin ──────────────────
+
+export function fetchAdminTenants(): Promise<TenantSummary[]> {
+  return apiFetch<TenantSummary[]>('/admin/tenants')
+}
+
+export function fetchAdminTenant(id: string): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${id}`)
+}
+
+export function changeAdminTenantPlan(
+  id: string,
+  plan: string
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${id}/plan`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  })
+}
+
+export interface TenantCheckoutResult {
+  preference_id: string | null
+  init_point: string
+  plan: string
+  price_cop: number
+  whatsapp_sent: boolean
+}
+
+export function createTenantCheckoutLink(
+  id: string
+): Promise<TenantCheckoutResult> {
+  return apiFetch<TenantCheckoutResult>(`/admin/tenants/${id}/checkout-link`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
 }
 
 // ── WhatsApp (conexión) ─────────────────────────────────────────────────────
