@@ -1,5 +1,6 @@
-// Conexión WhatsApp: estado de la instancia, QR para vincular el número,
-// desconexión de la sesión y envío de prueba. Solo administradores.
+// Plataforma (superadmin, adendo §3.1): el número de WhatsApp compartido
+// por todos los negocios, los proveedores de IA y (en fases próximas) la
+// auditoría de la plataforma.
 
 import { useState } from 'react'
 import Card from '../components/ui/card'
@@ -36,9 +37,10 @@ function stateDot(state: string): string {
   return 'bg-linen-400'
 }
 
-export default function ConexionPage() {
+export default function PlataformaPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isPlatformAdmin = user?.is_platform_admin
   const { data: status } = useWhatsappStatus()
   const connect = useConnectWhatsapp()
   const disconnect = useDisconnectWhatsapp()
@@ -50,11 +52,11 @@ export default function ConexionPage() {
   const [testText, setTestText] = useState('¡Hola! Soy el asistente Aura en pruebas 🛠')
   const [testResult, setTestResult] = useState<string | null>(null)
 
-  if (!isAdmin) {
+  if (!isPlatformAdmin) {
     return (
       <div className="ficha px-6 py-8 text-center">
         <p className="text-sm text-ink-soft">
-          Solo los administradores gestionan la conexión de WhatsApp.
+          Solo el administrador de la plataforma gestiona el número compartido.
         </p>
       </div>
     )
@@ -77,7 +79,7 @@ export default function ConexionPage() {
   const handleDisconnect = () => {
     if (
       !window.confirm(
-        '¿Desconectar WhatsApp? El asistente dejará de enviar y recibir mensajes hasta que vincules el número de nuevo.'
+        '¿Desconectar el WhatsApp compartido? NINGÚN negocio podrá enviar ni recibir mensajes hasta que se vincule de nuevo.'
       )
     ) {
       return
@@ -101,13 +103,14 @@ export default function ConexionPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Conexión WhatsApp</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Plataforma</h1>
         <p className="mt-1 text-sm text-linen-600">
-          Vincula el número que usará el asistente para conversar con tus clientes.
+          El número de WhatsApp compartido por todos tus clientes y la
+          infraestructura del asistente.
         </p>
       </div>
 
-      {/* Estado de la instancia */}
+      {/* Número compartido */}
       <Card className="mb-6 p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -182,49 +185,56 @@ export default function ConexionPage() {
       )}
 
       {/* Prueba de envío */}
-      <Card className="p-5">
-        <h2 className="text-sm font-semibold text-ink">Enviar prueba</h2>
-        <p className="mt-1 text-xs text-linen-600">
-          Comprueba que el canal envía mensajes reales.
-        </p>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div className="w-48">
-            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="test-number">
-              Número de destino
-            </label>
-            <Input
-              id="test-number"
-              value={testNumber}
-              onChangeValue={(value) => setTestNumber(value)}
-              placeholder="573001112233"
-              aria-label="Número de destino"
-            />
-          </div>
-          <div className="min-w-[200px] flex-1">
-            <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="test-text">
-              Mensaje
-            </label>
-            <Input
-              id="test-text"
-              value={testText}
-              onChangeValue={setTestText}
-              aria-label="Mensaje de prueba"
-            />
-          </div>
-          <Button
-            type="button"
-            onClick={handleTestSend}
-            disabled={testSend.isLoading || testNumber.trim().length < 8}
-          >
-            {testSend.isLoading ? 'Enviando…' : 'Enviar'}
-          </Button>
-        </div>
-        {testResult && (
-          <p className={`mt-3 text-sm ${testResult.startsWith('Error') ? 'text-lacre' : 'text-ok'}`}>
-            {testResult}
+      {isAdmin && (
+        <Card className="p-5">
+          <h2 className="text-sm font-semibold text-ink">Enviar prueba</h2>
+          <p className="mt-1 text-xs text-linen-600">
+            Comprueba que el canal envía mensajes reales.
           </p>
-        )}
-      </Card>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <div className="w-48">
+              <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="test-number">
+                Número de destino
+              </label>
+              <Input
+                id="test-number"
+                value={testNumber}
+                onChangeValue={(value) => setTestNumber(value)}
+                placeholder="573001112233"
+                aria-label="Número de destino"
+              />
+            </div>
+            <div className="min-w-[200px] flex-1">
+              <label className="mb-1 block text-xs font-medium text-ink-soft" htmlFor="test-text">
+                Mensaje
+              </label>
+              <Input
+                id="test-text"
+                value={testText}
+                onChangeValue={setTestText}
+                aria-label="Mensaje de prueba"
+              />
+            </div>
+            <Button
+              type="button"
+              onClick={handleTestSend}
+              disabled={testSend.isLoading || testNumber.trim().length < 8}
+            >
+              {testSend.isLoading ? 'Enviando…' : 'Enviar'}
+            </Button>
+          </div>
+          {testResult && (
+            <p className={`mt-3 text-sm ${testResult.startsWith('Error') ? 'text-lacre' : 'text-ok'}`}>
+              {testResult}
+            </p>
+          )}
+        </Card>
+      )}
+
+      <p className="mt-4 text-xs text-linen-600">
+        Próximamente aquí: proveedores de IA (LLM, STT, TTS), auditoría de la
+        plataforma y estado de los servicios.
+      </p>
     </div>
   )
 }

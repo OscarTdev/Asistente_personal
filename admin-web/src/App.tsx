@@ -5,15 +5,25 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ServiciosPage from './pages/ServiciosPage'
 import QuoterWorkspace from './pages/QuoterWorkspace'
-import ConexionPage from './pages/ConexionPage'
 import FollowUpPage from './pages/FollowUpPage'
 import CatalogPage from './pages/CatalogPage'
 import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import ClientesPage from './pages/ClientesPage'
-import AdminPage from './pages/AdminPage'
+import PlatformClientesPage from './pages/PlatformClientesPage'
+import PagosPlanesPage from './pages/PagosPlanesPage'
+import PlataformaPage from './pages/PlataformaPage'
 import RemindersPage from './pages/RemindersPage'
 import NegocioPage from './pages/NegocioPage'
+
+// /clientes por rol (adendo §3.2): superadmin ve sus negocios; dueño → su CRM
+function ClientesPorRol() {
+  const { user } = useAuth()
+  if (user?.is_platform_admin) {
+    return <PlatformClientesPage />
+  }
+  return <Navigate to="/servicios/crm" replace />
+}
 
 function App() {
   const { user } = useAuth()
@@ -42,11 +52,14 @@ function App() {
         <Route path="/servicios/reminders" element={<RemindersPage />} />
         <Route path="/servicios/crm" element={<ClientesPage />} />
         <Route path="/negocio" element={<NegocioPage />} />
-        <Route path="/conexion" element={<ConexionPage />} />
-        <Route path="/admin" element={<AdminPage />} />
+        {/* Superadmin: sus secciones de plataforma (adendo §3.1) */}
+        <Route path="/clientes" element={<ClientesPorRol />} />
+        <Route path="/pagos" element={<PagosPlanesPage />} />
+        <Route path="/plataforma" element={<PlataformaPage />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/agenda" element={<Navigate to="/servicios/reminders" replace />} />
-        <Route path="/clientes" element={<Navigate to="/servicios/crm" replace />} />
+        <Route path="/admin" element={<Navigate to="/clientes" replace />} />
+        <Route path="/conexion" element={<Navigate to="/plataforma" replace />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
         <Route path="/catalog" element={<Navigate to="/servicios/quoter/catalogo" replace />} />

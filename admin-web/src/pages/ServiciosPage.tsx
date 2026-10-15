@@ -10,6 +10,7 @@ import Button from '../components/ui/button'
 import ErrorSlip from '../components/ui/error-slip'
 import { IconEnter } from '../components/ui/icons'
 import { useModules, useToggleModule } from '../hooks/useModules'
+import { usePlanEntitlements, useUpdatePlanEntitlement } from '../hooks/usePlans'
 import { Module } from '../types'
 
 // Stationery ink chips — muted tints, one per service identity
@@ -96,6 +97,85 @@ function ServiceCard({
   )
 }
 
+// ── Matriz gratis/VIP (solo superadmin, adendo §3.4) ───────────────────────
+
+function EntitlementsMatrix() {
+  const { data, isLoading, error } = usePlanEntitlements()
+  const update = useUpdatePlanEntitlement()
+
+  const plans = [
+    { key: 'trial', label: 'Prueba (gratis)' },
+    { key: 'freemium', label: 'Freemium (gratis)' },
+    { key: 'premium', label: 'Premium (VIP)' },
+  ]
+
+  const cell = (moduleKey: string, planKey: string) =>
+    data?.find((i) => i.module_key === moduleKey && i.plan === planKey)
+
+  const handleToggle = (
+    moduleKey: string,
+    planKey: string,
+    allowed: boolean
+  ) => {
+    update.mutate({ plan: planKey, moduleKey, allowed })
+  }
+
+  return (
+    <Card className="mb-6 p-5">
+      <h2 className="mb-1 text-sm font-semibold text-ink">Servicios por plan (gratis / VIP)</h2>
+      <p className="mb-4 text-xs text-linen-600">
+        Define qué servicio incluye cada plan. Apagado aquí = ningún negocio en
+        ese plan puede encenderlo, aunque quiera.
+      </p>
+      {error && <ErrorSlip message={error.message} />}
+      {isLoading ? (
+        <div className="skel h-32 w-full" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="thead-edge bg-linen-50 text-left">
+                <th className="plate-label px-3 py-2 font-semibold">Servicio</th>
+                {plans.map((p) => (
+                  <th key={p.key} className="plate-label px-3 py-2 text-center font-semibold">
+                    {p.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...new Set((data ?? []).map((i) => i.module_key))].map((moduleKey) => {
+                const name =
+                  data?.find((i) => i.module_key === moduleKey)?.module_name ?? moduleKey
+                return (
+                  <tr key={moduleKey} className="border-b border-linen-100 last:border-0">
+                    <td className="px-3 py-2 font-medium text-ink">{name}</td>
+                    {plans.map((p) => {
+                      const item = cell(moduleKey, p.key)
+                      return (
+                        <td key={p.key} className="px-3 py-2 text-center">
+                          <div className="flex justify-center">
+                            <Switch
+                              checked={item?.allowed ?? false}
+                              disabled={update.isLoading}
+                              onChange={(value) => handleToggle(moduleKey, p.key, value)}
+                              label={`${name} en ${p.label}`}
+                            />
+                          </div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function ServiciosPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -140,6 +220,9 @@ export default function ServiciosPage() {
           las demás se encienden cuando toque perfeccionarlas.
         </p>
       </div>
+
+      {/* Superadmin: la matriz gratis/VIP de toda la plataforma (adendo §3.4) */}
+      {user?.is_platform_admin && <EntitlementsMatrix />}
 
       <div className="mb-4">
         <ErrorSlip message={error?.message ?? toggleModule.error?.message ?? null} />

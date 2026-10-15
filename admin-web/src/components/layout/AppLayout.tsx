@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { IconLogout, IconPanel, IconPerson, IconPower, IconTag, IconWifi } from '../ui/icons'
+import { IconLogout, IconPanel, IconPerson, IconPower, IconReceipt, IconTag, IconWifi } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -14,25 +14,29 @@ interface NavItem {
   end?: boolean
 }
 
+// Sidebar por rol (adendo §3.1 y §3.2): el dueño ve su asistente; el
+// superadmin además ve su plataforma (Clientes, Pagos y planes, Plataforma).
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Panel', icon: IconPanel, end: true },
   { to: '/servicios', label: 'Servicios', icon: IconPower },
   { to: '/negocio', label: 'Mi negocio', icon: IconPerson },
 ]
 
+const PLATFORM_ITEMS: NavItem[] = [
+  { to: '/clientes', label: 'Clientes', icon: IconTag },
+  { to: '/pagos', label: 'Pagos y planes', icon: IconReceipt },
+  { to: '/plataforma', label: 'Plataforma', icon: IconWifi },
+]
+
 export default function AppLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const isAdmin = user?.role === 'admin'
   const botName = user?.bot_name ?? 'Aura'
 
   const items: NavItem[] = [...NAV_ITEMS]
-  if (isAdmin) {
-    items.push({ to: '/conexion', label: 'Conexión', icon: IconWifi })
-  }
   if (user?.is_platform_admin) {
-    items.push({ to: '/admin', label: 'Admin', icon: IconTag })
+    items.splice(1, 0, ...PLATFORM_ITEMS)
   }
 
   // The brass rail slides to the active section — the one authored motion.

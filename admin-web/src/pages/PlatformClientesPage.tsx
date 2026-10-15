@@ -1,15 +1,13 @@
-// Administración de la plataforma: planes y precios del negocio.
-// Solo administradores de la plataforma (is_platform_admin).
+// Clientes de la plataforma (superadmin): los negocios que tienen el
+// asistente — su plan, su uso y su suscripción. Adendo §3.3.
+// (Los clientes de CADA negocio viven en el CRM del dueño: /servicios/crm.)
 
 import { useEffect, useState } from 'react'
 import Card from '../components/ui/card'
 import Button from '../components/ui/button'
-import Input from '../components/ui/input'
 import Modal from '../components/ui/modal'
-import Switch from '../components/ui/switch'
 import ErrorSlip from '../components/ui/error-slip'
 import { useAuth } from '../auth/AuthContext'
-import { usePlanPrices, useUpdatePlanEntitlement, useUpdatePlanPrice, usePlanEntitlements } from '../hooks/usePlans'
 import {
   useAdminTenant,
   useAdminTenants,
@@ -17,89 +15,7 @@ import {
   useTenantCheckoutLink,
 } from '../hooks/useAdminTenants'
 import { formatDate } from '../lib/format'
-import { PlanPrice, TenantSummary } from '../types'
-
-function formatCOP(value: number): string {
-  return `$${value.toLocaleString('es-CO')}`
-}
-
-function PlanRow({ plan }: { plan: PlanPrice }) {
-  const update = useUpdatePlanPrice()
-  const [price, setPrice] = useState(String(plan.price_cop))
-  const [note, setNote] = useState<string | null>(null)
-
-  useEffect(() => {
-    setPrice(String(plan.price_cop))
-  }, [plan.price_cop])
-
-  const parsed = Number(price)
-  const dirty = Number.isInteger(parsed) && parsed !== plan.price_cop
-
-  const handleSave = () => {
-    if (!Number.isInteger(parsed) || parsed < 0) {
-      setNote('El precio debe ser un entero mayor o igual a 0')
-      return
-    }
-    setNote(null)
-    update.mutate(
-      { plan: plan.plan, priceCop: parsed },
-      {
-        onSuccess: () => setNote('Precio actualizado ✓'),
-        onError: (err) => setNote(`Error: ${err.message}`),
-      }
-    )
-  }
-
-  return (
-    <div className="ficha flex flex-wrap items-end gap-3 px-4 py-3">
-      <div className="min-w-[140px] flex-1">
-        <div className="text-sm font-semibold text-ink">{plan.label}</div>
-        <div className="plate-label">{plan.plan}</div>
-      </div>
-      {plan.is_overridden && (
-        <span className="mb-1.5 rounded-full bg-pine-wash px-2 py-1 text-xs font-medium text-pine">
-          Personalizado
-        </span>
-      )}
-      <div className="w-40">
-        <label className="plate-label mb-1 block" htmlFor={`price-${plan.plan}`}>
-          Precio (COP)
-        </label>
-        <Input
-          id={`price-${plan.plan}`}
-          value={price}
-          onChangeValue={setPrice}
-          inputMode="numeric"
-          aria-label={`Precio del plan ${plan.label} en pesos colombianos`}
-        />
-      </div>
-      <div className="mb-3 text-sm tabular text-linen-600">
-        hoy: <span className="font-medium text-ink-soft">{formatCOP(plan.price_cop)}</span>
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        onClick={handleSave}
-        disabled={!dirty || update.isLoading}
-      >
-        {update.isLoading ? 'Guardando…' : 'Guardar'}
-      </Button>
-      {note && (
-        <p
-          className={`w-full text-xs ${
-            note.startsWith('Error') || note.startsWith('El precio')
-              ? 'text-lacre'
-              : 'text-ok'
-          }`}
-        >
-          {note}
-        </p>
-      )}
-    </div>
-  )
-}
-
-// ── Mis clientes: los negocios con el asistente ─────────────────────────────
+import { TenantSummary } from '../types'
 
 const PLAN_BADGES: Record<string, string> = {
   trial: 'bg-linen-100 text-linen-600',
@@ -342,7 +258,7 @@ function ClientsSection() {
   const [openId, setOpenId] = useState<string | null>(null)
 
   return (
-    <Card className="mb-6 p-5">
+    <Card className="p-5">
       <div className="mb-1 flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-ink">Mis clientes</h2>
         <span className="tabular text-xs text-linen-600">
@@ -404,100 +320,14 @@ function ClientsSection() {
   )
 }
 
-// ── Matriz gratis/VIP: qué servicio incluye cada plan ─────────────────────
-
-function EntitlementsMatrix() {
-  const { data, isLoading, error } = usePlanEntitlements()
-  const update = useUpdatePlanEntitlement()
-
-  const plans = [
-    { key: 'trial', label: 'Prueba (gratis)' },
-    { key: 'freemium', label: 'Freemium (gratis)' },
-    { key: 'premium', label: 'Premium (VIP)' },
-  ]
-
-  const cell = (moduleKey: string, planKey: string) =>
-    data?.find((i) => i.module_key === moduleKey && i.plan === planKey)
-
-  const handleToggle = (
-    moduleKey: string,
-    planKey: string,
-    allowed: boolean
-  ) => {
-    update.mutate({ plan: planKey, moduleKey, allowed })
-  }
-
-  return (
-    <Card className="p-5">
-      <h2 className="mb-1 text-sm font-semibold text-ink">Servicios por plan (gratis / VIP)</h2>
-      <p className="mb-4 text-xs text-linen-600">
-        Define qué servicio incluye cada plan. Apagado aquí = ningún negocio
-        en ese plan puede encenderlo, aunque sea solo para probarlo.
-      </p>
-      {error && <ErrorSlip message={error.message} />}
-      {isLoading ? (
-        <div className="skel h-32 w-full" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="thead-edge bg-linen-50 text-left">
-                <th className="plate-label px-3 py-2 font-semibold">Servicio</th>
-                {plans.map((p) => (
-                  <th key={p.key} className="plate-label px-3 py-2 text-center font-semibold">
-                    {p.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(data ?? []).length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-3 py-4 text-center text-xs text-linen-600">
-                    Sin servicios para mostrar.
-                  </td>
-                </tr>
-              )}
-              {[...new Set((data ?? []).map((i) => i.module_key))].map((moduleKey) => {
-                const name = data?.find((i) => i.module_key === moduleKey)?.module_name ?? moduleKey
-                return (
-                  <tr key={moduleKey} className="border-b border-linen-100 last:border-0">
-                    <td className="px-3 py-2 font-medium text-ink">{name}</td>
-                    {plans.map((p) => {
-                      const item = cell(moduleKey, p.key)
-                      return (
-                        <td key={p.key} className="px-3 py-2 text-center">
-                          <div className="flex justify-center">
-                            <Switch
-                              checked={item?.allowed ?? false}
-                              disabled={update.isLoading}
-                              onChange={(value) => handleToggle(moduleKey, p.key, value)}
-                              label={`${name} en ${p.label}`}
-                            />
-                          </div>
-                        </td>
-                      )
-                    })}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  )
-}
-
-export default function AdminPage() {
+export default function PlatformClientesPage() {
   const { user } = useAuth()
-  const { data, isLoading, error } = usePlanPrices()
 
   if (!user?.is_platform_admin) {
     return (
       <div className="ficha px-6 py-8 text-center">
         <p className="text-sm text-ink-soft">
-          Solo el administrador de la plataforma puede ver esta sección.
+          Solo el administrador de la plataforma ve sus clientes.
         </p>
       </div>
     )
@@ -506,43 +336,13 @@ export default function AdminPage() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Administración</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Clientes</h1>
         <p className="mt-1 text-sm text-linen-600">
-          Planes de suscripción y precios que cobra la plataforma.
+          Los negocios que tienen el asistente: su plan, su uso y su suscripción.
         </p>
       </div>
 
-      {error && (
-        <div className="mb-4">
-          <ErrorSlip message={error.message} />
-        </div>
-      )}
-
       <ClientsSection />
-
-      <Card className="p-5">
-        <h2 className="mb-1 text-sm font-semibold text-ink">Planes y precios</h2>
-        <p className="mb-4 text-xs text-linen-600">
-          El precio vigente se usa al generar el link de pago y al validar que
-          el pago recibido corresponde al plan. Los cambios aplican para links
-          nuevos; los ya emitidos se validan con el precio con el que se cobraron.
-        </p>
-        {isLoading ? (
-          <div className="space-y-2">
-            <div className="skel h-16 w-full" />
-            <div className="skel h-16 w-full" />
-            <div className="skel h-16 w-full" />
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {(data ?? []).map((plan) => (
-              <PlanRow key={plan.plan} plan={plan} />
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <EntitlementsMatrix />
     </div>
   )
 }
