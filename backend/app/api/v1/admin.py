@@ -273,6 +273,16 @@ async def change_plan(
     """Cambia el plan de un cliente y sincroniza sus servicios."""
     tenant = await _get_tenant_or_404(db, tenant_id)
     tenant = await apply_plan(db, tenant_id=tenant.id, plan=body.plan)
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="change_plan",
+        tenant_id=tenant.id,
+        object_ref=f"plan:{body.plan}",
+    )
+    await db.commit()
     return await _tenant_detail(db, tenant)
 
 
@@ -698,6 +708,94 @@ async def create_tenant_checkout_link(
     )
 
 
+# ── Auditoría y segundo factor (adendo §4) ─────────────────────────────────
+
+
+class TotpConfirm(BaseModel):
+    code: str = Field(min_length=6, max_length=6)
+
+
+@router.get("/audit-log")
+async def get_audit_log(
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+    tenant_id: UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict]:
+    """Las acciones de la plataforma: quién, qué, sobre qué cliente, cuándo."""
+    from app.services.audit import list_entries
+
+    entries = await list_entries(db, tenant_id=tenant_id, limit=limit)
+    return [
+        {
+            "id": str(e.id),
+            "actor_user_id": str(e.actor_user_id),
+            "tenant_id": str(e.tenant_id) if e.tenant_id else None,
+            "action": e.action,
+            "object_ref": e.object_ref,
+            "reason": e.reason,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in entries
+    ]
+
+
+@router.post("/me/2fa/setup")
+async def start_2fa(
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Inicia el setup del segundo factor: devuelve el secreto y el URI
+    otpauth:// para la app autenticadora. Se activa al confirmar con un
+    código válido."""
+    if not current_user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El 2FA es del superadmin",
+        )
+    from app.services.totp import start_totp_setup
+
+    return await start_totp_setup(db, user_id=current_user.id)
+
+
+@router.post("/me/2fa/confirm")
+async def confirm_2fa(
+    body: TotpConfirm,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Confirma el 2FA con el código de la app; desde aquí el login lo exige."""
+    from app.services.totp import confirm_totp
+
+    ok = await confirm_totp(db, user_id=current_user.id, code=body.code)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Código inválido: revisa la app y vuelve a intentar",
+        )
+    from app.services.audit import log_action
+
+    await log_action(db, actor_user_id=current_user.id, action="enable_2fa")
+    await db.commit()
+    return {"enabled": True}
+
+
+@router.delete("/me/2fa")
+async def disable_2fa(
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Apaga el 2FA (quedará registrado en auditoría)."""
+    from app.services.totp import disable_totp
+
+    await disable_totp(db, user_id=current_user.id)
+    from app.services.audit import log_action
+
+    await log_action(db, actor_user_id=current_user.id, action="disable_2fa")
+    await db.commit()
+    return {"enabled": False}
+
+
 # ── Motor de servicios: estado global y excepciones (adendo §5) ───────────
 
 
@@ -749,6 +847,15 @@ async def update_service_status(
         source="manual",
         updated_by=current_user.id,
     )
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="set_service_status",
+        object_ref=f"service:{service_key}:{body.status}",
+    )
+    await db.commit()
     return {"service_key": service_key, "status": body.status, "message": body.message}
 
 
@@ -809,6 +916,17 @@ async def upsert_tenant_override(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="set_service_override",
+        tenant_id=tenant.id,
+        object_ref=f"service:{body.service_key}:{'on' if body.allowed else 'off'}",
+        reason=body.reason,
+    )
+    await db.commit()
     return {
         "id": str(row.id),
         "service_key": row.service_key,
@@ -931,9 +1049,29 @@ async def list_tenant_conversations(
     db: AsyncSession = Depends(get_db),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    reason: str = Query(default=None, max_length=500, alias="motivo"),
 ) -> ConversationAdminPage:
-    """Conversaciones de un cliente (sus chats de WhatsApp)."""
+    """Conversaciones de un cliente — con motivo obligatorio (adendo §4.3).
+
+    Leer el contenido de un cliente es tratamiento de datos personales
+    (Ley 1581): el superadmin deja constancia de POR QUÉ.
+    """
+    if not reason or not reason.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Motivo obligatorio: indica por qué lees las conversaciones de este cliente",
+        )
     tenant = await _get_tenant_or_404(db, tenant_id)
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="read_conversations",
+        tenant_id=tenant.id,
+        reason=reason,
+    )
+    await db.commit()
 
     total = (
         await db.execute(

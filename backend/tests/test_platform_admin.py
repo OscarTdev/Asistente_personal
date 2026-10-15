@@ -374,9 +374,11 @@ async def test_toggle_module_respects_plan(
 async def test_chat_history_listing(
     client: AsyncClient, platform_admin: User, tenant: Tenant, chat_seed: dict
 ):
+    """Con motivo (adendo §4.3): auditar la lectura del chat del cliente."""
     response = await client.get(
         f"/api/v1/admin/tenants/{tenant.id}/conversations",
         headers=_headers(platform_admin),
+        params={"motivo": "Verificación del flujo en pruebas"},
     )
     assert response.status_code == HTTPStatus.OK
     data = response.json()
@@ -409,6 +411,7 @@ async def test_chat_history_isolated_between_tenants(
     response = await client.get(
         f"/api/v1/admin/tenants/{tenant2.id}/conversations",
         headers=_headers(platform_admin),
+        params={"motivo": "Verificación del aislamiento"},
     )
     assert response.status_code == HTTPStatus.OK
     assert response.json()["total"] == 0

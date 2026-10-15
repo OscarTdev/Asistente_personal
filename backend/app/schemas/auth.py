@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    # Segundo factor (solo el superadmin con 2FA activo; adendo §4.5)
+    totp_code: str | None = None
 
 
 class UserPublic(BaseModel):

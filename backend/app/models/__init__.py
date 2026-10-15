@@ -1,3 +1,4 @@
+from .audit_log import AuditLog
 from .base import Base
 from .catalog_items import CatalogItem
 from .channel_identity import ChannelIdentity
@@ -58,6 +59,7 @@ __all__ = [
     "PlanEntitlement",
     "ServiceStatus",
     "TenantServiceOverride",
+    "AuditLog",
     "Note",
     "Reminder",
 ]

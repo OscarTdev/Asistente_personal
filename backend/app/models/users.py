@@ -27,3 +27,8 @@ class User(Base, TimestampMixin):
     is_platform_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Segundo factor (TOTP) del superadmin (adendo §4.5)
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )

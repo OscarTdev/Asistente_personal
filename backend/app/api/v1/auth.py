@@ -134,6 +134,20 @@ async def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # Segundo factor del superadmin (adendo §4.5): con 2FA activo, sin
+    # código válido no hay token — aunque la contraseña sea correcta.
+    if user.is_platform_admin and user.totp_enabled:
+        from app.services.totp import verify_totp
+
+        if not user.totp_secret or not verify_totp(
+            user.totp_secret, request.totp_code or ""
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Código de verificación requerido o inválido",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
     access_token = create_access_token(
         user_id=user.id,
         tenant_id=user.tenant_id,
