@@ -160,6 +160,7 @@ DEV_STATUS: dict[str, str] = {
     "follow_up": "active",
     "crm": "active",
     "reminders": "active",
+    "voice_notes": "active",  # STT (F7) + notas + recordatorios ya funcionan
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar")

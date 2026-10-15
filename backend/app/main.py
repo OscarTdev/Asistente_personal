@@ -35,7 +35,7 @@ async def _followup_loop() -> None:
 
 
 async def _subscriptions_loop() -> None:
-    """Vence suscripciones premium y envía recordatorios programados."""
+    """Vence suscripciones premium, envía recordatorios y el resumen diario."""
     import asyncio
 
     from app.core.database import SessionFactory
@@ -43,6 +43,7 @@ async def _subscriptions_loop() -> None:
     from app.services.notes import due_reminders, mark_reminder_sent
 
     await asyncio.sleep(180)  # arranque en frío
+    _last_daily_summary = None  # fecha del último resumen enviado
     while True:
         try:
             async with SessionFactory() as db:
@@ -92,6 +93,29 @@ async def _subscriptions_loop() -> None:
                         logger.exception(
                             "No se pudo enviar el recordatorio %s", reminder.id
                         )
+
+                # 3) Resumen diario proactivo (adendo: el módulo que hace
+                #    volver al usuario) — solo una vez al día, en la mañana
+                from datetime import UTC, datetime
+
+                from app.services.daily_summary import send_daily_summaries
+
+                now = datetime.now(UTC)
+                # UTC-5 Colombia: 12:00 UTC = 7:00am. Ventana: 12-13 UTC.
+                if (
+                    12 <= now.hour < 13
+                    and _last_daily_summary != now.date()
+                ):
+                    from app.channels import get_channel as _gc
+
+                    sent = await send_daily_summaries(
+                        db, channel=_gc("evolution")
+                    )
+                    if sent:
+                        logger.info(
+                            "Resumen diario enviado a %d negocios", sent
+                        )
+                    _last_daily_summary = now.date()
         except Exception:
             logger.exception("Falló el ciclo de suscripciones/recordatorios")
         await asyncio.sleep(300)  # cada 5 minutos
