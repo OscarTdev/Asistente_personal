@@ -17,7 +17,18 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import (
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+from reportlab.platypus import (
+    Image as RLImage,
+)
 
 from app.models import Contact, Quote, QuoteItem, Tenant
 from app.services.documents import total_in_letters
@@ -47,6 +58,7 @@ def generate_quote_pdf(
     tenant: Tenant | None = None,
     contact: Contact | None = None,
     doc_number: str | None = None,
+    logo_bytes: bytes | None = None,
 ) -> io.BytesIO:
     """Genera un archivo PDF con la cotización formateada y lo retorna en un BytesIO."""
     buffer = io.BytesIO()
@@ -144,6 +156,24 @@ def generate_quote_pdf(
     if tenant and getattr(tenant, "account_type", "personal") == "business":
         pass  # NIT ya está arriba
 
+    # Logo del negocio (si está configurado): escala a una caja de 110x48pt
+    business_title = Paragraph("<br/>".join(business_lines), title_style)
+    logo_cell: list[Any] = [business_title]
+    if logo_bytes:
+        try:
+            reader = ImageReader(io.BytesIO(logo_bytes))
+            img_w, img_h = reader.getSize()
+            if img_w > 0 and img_h > 0:
+                scale = min(110.0 / img_w, 48.0 / img_h)
+                logo_cell = [
+                    RLImage(reader, width=img_w * scale, height=img_h * scale),
+                    Spacer(1, 6),
+                    business_title,
+                ]
+        except Exception:
+            # Un logo corrupto jamás debe romper la cotización
+            logo_cell = [business_title]
+
     date_str = quote.created_at.strftime("%d/%m/%Y") if quote.created_at else "-"
     valid_str = quote.valid_until.strftime("%d/%m/%Y") if quote.valid_until else "15 días"
 
@@ -156,7 +186,7 @@ def generate_quote_pdf(
 
     header_data = [
         [
-            Paragraph("<br/>".join(business_lines), title_style),
+            logo_cell,
             Paragraph(
                 "<br/>".join(header_right_parts),
                 right_sub_style,

@@ -212,6 +212,11 @@ export interface ContactUpdatePayload {
   is_active?: boolean
 }
 
+export interface Branding {
+  has_logo: boolean
+  logo_data_url: string | null
+}
+
 // ── Dashboard ──────────────────────────────────────────────────────────────
 
 export interface ServiceStat {

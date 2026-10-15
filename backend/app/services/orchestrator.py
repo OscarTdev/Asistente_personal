@@ -54,6 +54,19 @@ from app.services.usage import log_service_usage
 
 logger = logging.getLogger(__name__)
 
+
+async def _load_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
+    """Logo actual del tenant para los encabezados de PDF (None si no hay)."""
+    from app.models import TenantBranding
+
+    branding = (
+        await db.execute(
+            select(TenantBranding).where(TenantBranding.tenant_id == tenant_id)
+        )
+    ).scalar_one_or_none()
+    return branding.logo_bytes if branding else None
+
+
 _SYSTEM_PROMPT = """Eres {bot_name}, el asistente por WhatsApp de {tenant_name}.
 Ayudas al dueño del negocio a atender a sus clientes por WhatsApp.
 
@@ -572,6 +585,7 @@ async def _handle_confirmation(
                 description=snapshot.get("description", "Servicios"),
                 amount=Decimal(snapshot.get("amount", "0")),
                 bank_details=snapshot.get("bank_details"),
+                logo_bytes=await _load_logo_bytes(db, tenant.id),
             )
             import base64 as b64mod
             pdf_b64 = b64mod.b64encode(pdf_buffer.getvalue()).decode("ascii")
@@ -663,6 +677,7 @@ async def _handle_invoice(
         description=description,
         amount=amount,
         bank_details=branding.bank_details if branding else None,
+        logo_bytes=branding.logo_bytes if branding else None,
     )
 
     import base64 as b64mod

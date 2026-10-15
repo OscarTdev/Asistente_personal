@@ -4,6 +4,7 @@ import {
   CatalogItemPayload,
   CatalogItemUpdatePayload,
   CatalogPage,
+  Branding,
   Contact,
   ContactDetail,
   ContactMessagesPage,
@@ -290,6 +291,28 @@ export function updatePlanPrice(plan: string, priceCop: number): Promise<PlanPri
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ price_cop: priceCop }),
   })
+}
+
+// ── Branding (logo del negocio en los PDFs) ─────────────────────────────────
+
+export function fetchBranding(): Promise<Branding> {
+  return apiFetch<Branding>('/branding')
+}
+
+export function uploadBrandingLogo(
+  file: File
+): Promise<{ has_logo: boolean; logo_mimetype: string }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  // Sin Content-Type: el navegador agrega el multipart boundary
+  return apiFetch<{ has_logo: boolean; logo_mimetype: string }>('/branding/logo', {
+    method: 'PUT',
+    body: formData,
+  })
+}
+
+export function deleteBrandingLogo(): Promise<void> {
+  return apiFetch<void>('/branding/logo', { method: 'DELETE' })
 }
 
 // ── WhatsApp (conexión) ─────────────────────────────────────────────────────

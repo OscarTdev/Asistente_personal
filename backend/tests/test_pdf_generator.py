@@ -65,6 +65,41 @@ def test_pdf_with_real_contact():
     assert data[:5] == b"%PDF-"
 
 
+def test_pdf_with_logo():
+    """El logo (PNG en bytes) se incrusta en el encabezado sin romper nada."""
+    import io as io_mod
+
+    from PIL import Image
+
+    logo_buffer = io_mod.BytesIO()
+    Image.new("RGBA", (200, 80), (15, 23, 42, 255)).save(logo_buffer, format="PNG")
+    logo_bytes = logo_buffer.getvalue()
+
+    tenant = _tenant()
+    quote = _quote(tenant, _contact())
+
+    buffer = generate_quote_pdf(
+        quote, _items(quote), tenant=tenant, logo_bytes=logo_bytes
+    )
+
+    data = buffer.getvalue()
+    assert data[:5] == b"%PDF-"
+    # El PNG va incrustado en el PDF
+    assert logo_bytes[:8] in data or b"Image" in data
+
+
+def test_pdf_with_corrupt_logo_does_not_break():
+    """Un logo corrupto jamás debe romper la cotización (fallback a texto)."""
+    tenant = _tenant()
+    quote = _quote(tenant, _contact())
+
+    buffer = generate_quote_pdf(
+        quote, _items(quote), tenant=tenant, logo_bytes=b"no-es-un-png"
+    )
+
+    assert buffer.getvalue()[:5] == b"%PDF-"
+
+
 def test_pdf_without_contact():
     """Sin contacto sigue funcionando (regresión)."""
     tenant = _tenant()

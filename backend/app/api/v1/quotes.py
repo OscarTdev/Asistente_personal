@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.core.database import get_db
-from app.models import Contact, QuoteItem, Tenant, User
+from app.models import Contact, QuoteItem, Tenant, TenantBranding, User
 from app.schemas.quotes import (
     ExtractRequest,
     ExtractResponse,
@@ -269,11 +269,21 @@ async def download_quote_pdf(
             await db.execute(select(Contact).where(Contact.id == quote.contact_id))
         ).scalar_one_or_none()
 
+    # Cargar branding para el logo del encabezado
+    branding = (
+        await db.execute(
+            select(TenantBranding).where(
+                TenantBranding.tenant_id == current_user.tenant_id
+            )
+        )
+    ).scalar_one_or_none()
+
     pdf_buffer = pdf_service.generate_quote_pdf(
         quote=quote,
         items=items,
         tenant=tenant,
         contact=contact,
+        logo_bytes=branding.logo_bytes if branding else None,
     )
     await log_service_usage(
         db,

@@ -15,6 +15,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
     HRFlowable,
     Paragraph,
@@ -22,6 +23,9 @@ from reportlab.platypus import (
     Spacer,
     Table,
     TableStyle,
+)
+from reportlab.platypus import (
+    Image as RLImage,
 )
 
 from app.models import Contact, Tenant
@@ -45,6 +49,7 @@ def generate_invoice_pdf(
     description: str,
     amount: Decimal,
     bank_details: dict | None = None,
+    logo_bytes: bytes | None = None,
 ) -> io.BytesIO:
     """Genera una cuenta de cobro en PDF y la devuelve en un BytesIO."""
     buffer = io.BytesIO()
@@ -85,6 +90,20 @@ def generate_invoice_pdf(
     )
 
     story: list[Any] = []
+
+    # Logo del negocio (si está configurado): escala a una caja de 110x48pt
+    if logo_bytes:
+        try:
+            reader = ImageReader(io.BytesIO(logo_bytes))
+            img_w, img_h = reader.getSize()
+            if img_w > 0 and img_h > 0:
+                scale = min(110.0 / img_w, 48.0 / img_h)
+                story.append(
+                    RLImage(reader, width=img_w * scale, height=img_h * scale)
+                )
+                story.append(Spacer(1, 8))
+        except Exception:
+            pass  # un logo corrupto jamás debe romper la cuenta de cobro
 
     # Encabezado
     business_lines = [escape(tenant.name)]
