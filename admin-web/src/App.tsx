@@ -39,11 +39,12 @@ function App() {
           <Route path="seguimiento" element={<FollowUpPage />} />
         </Route>
         <Route path="/servicios/reminders" element={<RemindersPage />} />
-        <Route path="/clientes" element={<ClientesPage />} />
+        <Route path="/servicios/crm" element={<ClientesPage />} />
         <Route path="/conexion" element={<ConexionPage />} />
         <Route path="/admin" element={<AdminPage />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/agenda" element={<Navigate to="/servicios/reminders" replace />} />
+        <Route path="/clientes" element={<Navigate to="/servicios/crm" replace />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
         <Route path="/catalog" element={<Navigate to="/servicios/quoter/catalogo" replace />} />

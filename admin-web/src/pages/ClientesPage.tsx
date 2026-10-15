@@ -2,13 +2,14 @@
 // su ficha editable (nombre, notas, retirar/reactivar).
 
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Card from '../components/ui/card'
 import Input from '../components/ui/input'
 import Modal from '../components/ui/modal'
 import Button from '../components/ui/button'
 import Switch from '../components/ui/switch'
 import ErrorSlip from '../components/ui/error-slip'
-import { IconPerson, IconX } from '../components/ui/icons'
+import { IconArrowLeft, IconPerson, IconX } from '../components/ui/icons'
 import {
   useContact,
   useContactMessages,
@@ -567,11 +568,20 @@ export default function ClientesPage() {
 
   return (
     <div>
+      <Link
+        to="/servicios"
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-pine hover:underline"
+      >
+        <IconArrowLeft className="h-4 w-4" />
+        Servicios
+      </Link>
+
       {/* Desk header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">Clientes</h1>
+      <div className="mt-3">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">Contactos y clientes</h1>
         <p className="mt-1 text-sm text-linen-600">
-          Quiénes escriben al asistente, su última interacción y su ficha.
+          El mini CRM del negocio: quiénes son tus clientes, su historial de
+          conversación, cotizaciones, notas y etiquetas.
         </p>
       </div>
 

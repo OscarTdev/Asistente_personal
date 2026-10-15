@@ -74,7 +74,7 @@ async def test_modules_order_sub_services_and_workspaces(
     assert data["quoter"]["dev_status"] == "active"
     assert data["quoter"]["workspace"] == "/servicios/quoter"
     assert data["crm"]["dev_status"] == "active"
-    assert data["crm"]["workspace"] == "/clientes"
+    assert data["crm"]["workspace"] == "/servicios/crm"
     assert data["reminders"]["dev_status"] == "active"
     assert data["reminders"]["workspace"] == "/servicios/reminders"
 

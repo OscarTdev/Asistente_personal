@@ -165,7 +165,7 @@ DEV_STATUS: dict[str, str] = {
 # Workspace del panel para servicios activos (donde vive "Entrar")
 WORKSPACE_ROUTE: dict[str, str] = {
     "quoter": "/servicios/quoter",
-    "crm": "/clientes",
+    "crm": "/servicios/crm",
     "reminders": "/servicios/reminders",
 }
 
