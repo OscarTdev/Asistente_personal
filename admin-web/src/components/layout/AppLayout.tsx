@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
 ]
 
 const PLATFORM_ITEMS: NavItem[] = [
+  { to: '/admin', label: 'Admin', icon: IconPanel },
   { to: '/clientes', label: 'Clientes', icon: IconTag },
   { to: '/pagos', label: 'Pagos y planes', icon: IconReceipt },
   { to: '/plataforma', label: 'Plataforma', icon: IconWifi },

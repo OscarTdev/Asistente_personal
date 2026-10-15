@@ -369,3 +369,95 @@ export interface FollowUpRunResult {
   round2_sent: number
   errors: number
 }
+// -- Administración de la plataforma (solo is_platform_admin) -------------
+
+export interface AdminTenant {
+  id: string
+  name: string
+  slug: string
+  bot_name: string
+  is_active: boolean
+  plan: string
+  plan_label: string
+  plan_price_cop: number
+  wa_id: string | null
+  account_type: string
+  nit: string | null
+  customer_mode: boolean
+  subscription_status: string | null
+  subscription_period_end: string | null
+  enabled_modules: number
+  total_modules: number
+  contacts: number
+  quotes: number
+  messages: number
+  users: number
+}
+
+export interface AdminModule {
+  key: string
+  name: string
+  category: string
+  dev_status: 'active' | 'development'
+  is_enabled: boolean
+  entitled: boolean
+}
+
+export interface AdminPaymentMethod {
+  id: string
+  provider: string
+  brand: string
+  last4: string
+  exp_month: number | null
+  exp_year: number | null
+  is_default: boolean
+  created_at: string
+}
+
+export interface AdminTenantDetail extends AdminTenant {
+  modules: AdminModule[]
+  payment_methods: AdminPaymentMethod[]
+  subscription: {
+    plan_key: string
+    status: string
+    provider: string
+    current_period_start: string | null
+    current_period_end: string | null
+    created_at: string
+  } | null
+}
+
+export interface AdminConversation {
+  id: string
+  contact_id: string
+  contact_name: string | null
+  contact_wa_id: string
+  status: string
+  messages_count: number
+  last_message_at: string | null
+}
+
+export interface AdminMessage {
+  id: string
+  direction: 'in' | 'out'
+  type: string
+  content: string | null
+  created_at: string
+}
+
+export interface CheckoutLinkResult {
+  preference_id: string | null
+  init_point: string
+  plan: string
+  price_cop: number
+  whatsapp_sent: boolean
+}
+
+export interface ChannelIdentity {
+  id: string
+  channel: string
+  external_id: string
+  kind: 'owner' | 'team' | 'contact'
+  contact_id: string
+  created_at: string
+}

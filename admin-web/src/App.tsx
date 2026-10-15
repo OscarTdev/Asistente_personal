@@ -15,6 +15,7 @@ import PagosPlanesPage from './pages/PagosPlanesPage'
 import PlataformaPage from './pages/PlataformaPage'
 import RemindersPage from './pages/RemindersPage'
 import NegocioPage from './pages/NegocioPage'
+import AdminPage from './pages/AdminPage'
 
 // /clientes por rol (adendo §3.2): superadmin ve sus negocios; dueño → su CRM
 function ClientesPorRol() {
@@ -56,9 +57,10 @@ function App() {
         <Route path="/clientes" element={<ClientesPorRol />} />
         <Route path="/pagos" element={<PagosPlanesPage />} />
         <Route path="/plataforma" element={<PlataformaPage />} />
+        {/* Admin completo de la plataforma: planes, chat, pagos, servicios */}
+        <Route path="/admin" element={<AdminPage />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/agenda" element={<Navigate to="/servicios/reminders" replace />} />
-        <Route path="/admin" element={<Navigate to="/clientes" replace />} />
         <Route path="/conexion" element={<Navigate to="/plataforma" replace />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />

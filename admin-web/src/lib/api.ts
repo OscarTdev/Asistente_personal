@@ -1,4 +1,4 @@
-import {
+﻿import {
   CatalogImportResult,
   CatalogItem,
   CatalogItemPayload,
@@ -31,6 +31,13 @@ import {
   TenantSummary,
   WhatsappConnectResult,
   WhatsappStatus,
+  AdminTenant,
+  AdminTenantDetail,
+  AdminModule,
+  AdminConversation,
+  AdminMessage,
+  CheckoutLinkResult,
+  ChannelIdentity,
 } from '../types'
 
 export class ApiError extends Error {
@@ -90,7 +97,7 @@ export async function loginRequest(email: string, password: string): Promise<Log
   })
 }
 
-// ── Modules ──────────────────────────────────────────────────────────────────
+// â”€â”€ Modules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchModules(): Promise<Module[]> {
   return apiFetch<Module[]>('/modules')
@@ -104,7 +111,7 @@ export function toggleModule(moduleKey: string, isEnabled: boolean): Promise<Mod
   })
 }
 
-// ── Catalog ──────────────────────────────────────────────────────────────────
+// â”€â”€ Catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface CatalogQuery {
   skip: number
@@ -155,7 +162,7 @@ export function importCatalogCsv(file: File): Promise<CatalogImportResult> {
   })
 }
 
-// ── Quotes ──────────────────────────────────────────────────────────────────
+// â”€â”€ Quotes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface QuotesQuery {
   skip: number
@@ -226,7 +233,7 @@ export function deleteQuoteItem(quoteId: string, itemId: string): Promise<void> 
   return apiFetch<void>(`/quotes/${quoteId}/items/${itemId}`, { method: 'DELETE' })
 }
 
-// ── Clientes (contactos de WhatsApp) ─────────────────────────────────────────
+// â”€â”€ Clientes (contactos de WhatsApp) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface ContactsQuery {
   skip: number
@@ -267,7 +274,7 @@ export function fetchContactMessages(
   return apiFetch<ContactMessagesPage>(`/contacts/${id}/messages?${params.toString()}`)
 }
 
-// ── Mini CRM: etiquetas, notas y cotizaciones por cliente ───────────────────
+// â”€â”€ Mini CRM: etiquetas, notas y cotizaciones por cliente â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchContactTags(): Promise<string[]> {
   return apiFetch<string[]>('/contacts/tags')
@@ -303,7 +310,7 @@ export function fetchContactQuotes(id: string): Promise<ContactQuote[]> {
   return apiFetch<ContactQuote[]>(`/contacts/${id}/quotes`)
 }
 
-// ── Agenda (recordatorios) ──────────────────────────────────────────────────
+// â”€â”€ Agenda (recordatorios) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchReminders(statusFilter?: string): Promise<Reminder[]> {
   const params = new URLSearchParams()
@@ -348,13 +355,13 @@ export function deactivateContact(id: string): Promise<void> {
   return apiFetch<void>(`/contacts/${id}`, { method: 'DELETE' })
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────────────
+// â”€â”€ Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchDashboardStats(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/dashboard/stats')
 }
 
-// ── Planes y precios (admin de plataforma) ───────────────────────────────────
+// â”€â”€ Planes y precios (admin de plataforma) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchPlanPrices(): Promise<PlanPrice[]> {
   return apiFetch<PlanPrice[]>('/admin/plan-prices')
@@ -368,7 +375,7 @@ export function updatePlanPrice(plan: string, priceCop: number): Promise<PlanPri
   })
 }
 
-// ── Matriz gratis/VIP (servicios por plan) ──────────────────────────────────
+// â”€â”€ Matriz gratis/VIP (servicios por plan) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchPlanEntitlements(): Promise<PlanEntitlementItem[]> {
   return apiFetch<PlanEntitlementItem[]>('/admin/plan-entitlements')
@@ -389,7 +396,7 @@ export function updatePlanEntitlement(
   )
 }
 
-// ── Branding (logo del negocio en los PDFs) ─────────────────────────────────
+// â”€â”€ Branding (logo del negocio en los PDFs) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchBranding(): Promise<Branding> {
   return apiFetch<Branding>('/branding')
@@ -411,7 +418,7 @@ export function deleteBrandingLogo(): Promise<void> {
   return apiFetch<void>('/branding/logo', { method: 'DELETE' })
 }
 
-// ── Mis clientes (negocios con el asistente) — panel Admin ──────────────────
+// â”€â”€ Mis clientes (negocios con el asistente) â€” panel Admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchAdminTenants(): Promise<TenantSummary[]> {
   return apiFetch<TenantSummary[]>('/admin/tenants')
@@ -450,7 +457,7 @@ export function createTenantCheckoutLink(
   })
 }
 
-// ── WhatsApp (conexión) ─────────────────────────────────────────────────────
+// â”€â”€ WhatsApp (conexiÃ³n) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchWhatsappStatus(): Promise<WhatsappStatus> {
   return apiFetch<WhatsappStatus>('/whatsapp/status')
@@ -474,7 +481,7 @@ export function testSendWhatsapp(number: string, text: string): Promise<{ status
   })
 }
 
-// ── Seguimiento de cotizaciones ─────────────────────────────────────────────
+// â”€â”€ Seguimiento de cotizaciones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchFollowupPending(
   skip: number = 0,
@@ -511,3 +518,143 @@ export async function downloadQuotePdf(quoteId: string): Promise<void> {
   link.remove()
   URL.revokeObjectURL(url)
 }
+// -- Administración de la plataforma (solo is_platform_admin) -------------
+
+export function fetchAdminTenants(): Promise<AdminTenant[]> {
+  return apiFetch<AdminTenant[]>('/admin/tenants')
+}
+
+export function fetchAdminTenant(id: string): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(/admin/tenants/)
+}
+
+export function updateAdminTenant(
+  id: string,
+  data: { name?: string; bot_name?: string; customer_mode?: boolean }
+): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(/admin/tenants/, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
+export function setAdminTenantPlan(
+  id: string,
+  plan: string
+): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(/admin/tenants//plan, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan }),
+  })
+}
+
+export function setAdminTenantWhatsapp(
+  id: string,
+  wa_id: string | null
+): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(/admin/tenants//whatsapp, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wa_id }),
+  })
+}
+
+export function toggleAdminModule(
+  tenantId: string,
+  moduleKey: string,
+  isEnabled: boolean
+): Promise<AdminModule> {
+  return apiFetch<AdminModule>(
+    /admin/tenants//modules/,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_enabled: isEnabled }),
+    }
+  )
+}
+
+export function fetchAdminConversations(
+  tenantId: string,
+  skip: number = 0,
+  limit: number = 20
+): Promise<{ items: AdminConversation[]; total: number }> {
+  return apiFetch<{ items: AdminConversation[]; total: number }>(
+    /admin/tenants//conversations?skip=\&limit=\
+  )
+}
+
+export function fetchAdminMessages(
+  tenantId: string,
+  conversationId: string,
+  limit: number = 100
+): Promise<{ items: AdminMessage[]; total: number }> {
+  return apiFetch<{ items: AdminMessage[]; total: number }>(
+    /admin/tenants//conversations/\/messages?limit=\
+  )
+}
+
+export function addAdminPaymentMethod(
+  tenantId: string,
+  data: { brand: string; last4: string; exp_month?: number; exp_year?: number }
+): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(
+    /admin/tenants//payment-method,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  )
+}
+
+export function deleteAdminPaymentMethod(
+  tenantId: string,
+  paymentMethodId: string
+): Promise<AdminTenantDetail> {
+  return apiFetch<AdminTenantDetail>(
+    /admin/tenants//payment-methods/\,
+    { method: 'DELETE' }
+  )
+}
+
+export function createAdminCheckoutLink(
+  tenantId: string,
+  sendToWhatsapp: boolean = false
+): Promise<CheckoutLinkResult> {
+  return apiFetch<CheckoutLinkResult>(
+    /admin/tenants//checkout-link,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ send_to_whatsapp: sendToWhatsapp }),
+    }
+  )
+}
+
+export function fetchAdminIdentities(
+  tenantId: string,
+  contactId: string
+): Promise<ChannelIdentity[]> {
+  return apiFetch<ChannelIdentity[]>(
+    /admin/tenants//contacts/\/identities
+  )
+}
+
+export function addAdminIdentity(
+  tenantId: string,
+  contactId: string,
+  data: { channel: string; external_id: string; kind: string }
+): Promise<ChannelIdentity> {
+  return apiFetch<ChannelIdentity>(
+    /admin/tenants//contacts/\/identities,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }
+  )
+}
+
