@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Quote, QuoteItem
+from app.models import CatalogItem, Contact, Conversation, Quote, QuoteItem
 from app.schemas.quotes import (
     QuoteCreate,
     QuoteDetail,
@@ -25,6 +25,63 @@ from app.schemas.quotes import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class CrossTenantReference(ValueError):
+    """La referencia (contacto, conversación o ítem del catálogo) no
+    pertenece al tenant autenticado. Nunca confiamos en los UUID que
+    envía el frontend: se validan contra el tenant del token."""
+
+
+
+async def _assert_owned_contact(
+    db: AsyncSession, tenant_id: UUID, contact_id: UUID | None
+) -> None:
+    if contact_id is None:
+        return
+    owned = (
+        await db.execute(
+            select(Contact.id).where(
+                Contact.tenant_id == tenant_id, Contact.id == contact_id
+            )
+        )
+    ).scalar_one_or_none()
+    if owned is None:
+        raise CrossTenantReference("Contacto no encontrado en este negocio")
+
+
+async def _assert_owned_conversation(
+    db: AsyncSession, tenant_id: UUID, conversation_id: UUID | None
+) -> None:
+    if conversation_id is None:
+        return
+    owned = (
+        await db.execute(
+            select(Conversation.id).where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.id == conversation_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if owned is None:
+        raise CrossTenantReference("Conversación no encontrada en este negocio")
+
+
+async def _assert_owned_catalog_item(
+    db: AsyncSession, tenant_id: UUID, catalog_item_id: UUID | None
+) -> None:
+    if catalog_item_id is None:
+        return
+    owned = (
+        await db.execute(
+            select(CatalogItem.id).where(
+                CatalogItem.tenant_id == tenant_id,
+                CatalogItem.id == catalog_item_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if owned is None:
+        raise CrossTenantReference("Ítem del catálogo no encontrado en este negocio")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -90,7 +147,16 @@ async def get_quote(db: AsyncSession, tenant_id: UUID, quote_id: UUID) -> QuoteD
 async def create_quote(
     db: AsyncSession, tenant_id: UUID, data: QuoteCreate
 ) -> QuoteDetail:
-    """Crea una cotización con sus ítems iniciales."""
+    """Crea una cotización con sus ítems iniciales.
+
+    Toda referencia (contacto, conversación, ítems del catálogo) se valida
+    contra el tenant: un UUID ajeno jamás cruza la frontera (P0 cerrado).
+    """
+    await _assert_owned_contact(db, tenant_id, data.contact_id)
+    await _assert_owned_conversation(db, tenant_id, data.conversation_id)
+    for item_data in data.items:
+        await _assert_owned_catalog_item(db, tenant_id, item_data.catalog_item_id)
+
     quote = Quote(
         tenant_id=tenant_id,
         contact_id=data.contact_id,
@@ -143,6 +209,7 @@ async def update_quote(
 async def add_quote_item(
     db: AsyncSession, tenant_id: UUID, quote: Quote, data: QuoteItemCreate
 ) -> QuoteItem:
+    await _assert_owned_catalog_item(db, tenant_id, data.catalog_item_id)
     line_total = data.quantity * data.unit_price
     item = QuoteItem(
         tenant_id=tenant_id,

@@ -17,6 +17,102 @@ def auth_headers(admin_user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+# ── Aislamiento (P0 cerrado): UUIDs ajenos nunca cruzan la frontera ─────────
+
+
+@pytest.mark.asyncio
+async def test_create_quote_rejects_foreign_contact(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session,
+    tenant,
+):
+    """Un contacto de OTRO tenant en el payload → 422, nada se crea."""
+    import uuid
+
+    from app.models import Contact, Tenant
+
+    other = Tenant(
+        id=uuid.uuid4(), name="Ajeno", slug="ajeno-q", bot_name="Aura", is_active=True
+    )
+    db_session.add(other)
+    await db_session.flush()
+    foreign_contact = Contact(tenant_id=other.id, wa_id="573009990099")
+    db_session.add(foreign_contact)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/quotes",
+        json={"contact_id": str(foreign_contact.id), "notes": "intrusión"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert "no encontrado en este negocio" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_quote_rejects_foreign_catalog_item(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session,
+    tenant,
+):
+    """Un ítem de catálogo de OTRO tenant → 422 (aunque el resto sea válido)."""
+    import uuid
+
+    from app.models import CatalogItem, Tenant
+
+    other = Tenant(
+        id=uuid.uuid4(), name="Ajeno", slug="ajeno-q2", bot_name="Aura", is_active=True
+    )
+    db_session.add(other)
+    await db_session.flush()
+    foreign_item = CatalogItem(
+        tenant_id=other.id, name="Cable robado", unit="m", unit_price=100
+    )
+    db_session.add(foreign_item)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/quotes",
+        json={
+            "notes": "intrusión",
+            "items": [
+                {
+                    "description": "Cable ajeno",
+                    "quantity": 1,
+                    "unit_price": "100.00",
+                    "catalog_item_id": str(foreign_item.id),
+                }
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+    assert "catálogo no encontrado" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_quote_with_own_contact_works(
+    client: AsyncClient, auth_headers: dict[str, str], db_session, tenant, admin_user
+):
+    """Referencias propias → normal: la cotización se crea."""
+    from app.models import Contact
+
+    own_contact = Contact(
+        tenant_id=admin_user.tenant_id, wa_id="573001110099", name="Propio"
+    )
+    db_session.add(own_contact)
+    await db_session.commit()
+
+    resp = await client.post(
+        "/api/v1/quotes",
+        json={"contact_id": str(own_contact.id), "notes": "cotización legítima"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+
+
 @pytest.mark.asyncio
 async def test_quotes_crud_and_recalculations(
     client: AsyncClient, auth_headers: dict[str, str]

@@ -25,6 +25,7 @@ from app.schemas.quotes import (
 from app.services import ai_extraction as ai_service
 from app.services import pdf_generator as pdf_service
 from app.services import quotes as quotes_service
+from app.services.quotes import CrossTenantReference
 from app.services.usage import log_service_usage
 
 router = APIRouter()
@@ -55,11 +56,17 @@ async def create_quote(
     db: AsyncSession = Depends(get_db),
 ) -> QuoteDetail:
     """Crea una nueva cotización con ítems opcionales."""
-    quote = await quotes_service.create_quote(
-        db=db,
-        tenant_id=current_user.tenant_id,
-        data=body,
-    )
+    try:
+        quote = await quotes_service.create_quote(
+            db=db,
+            tenant_id=current_user.tenant_id,
+            data=body,
+        )
+    except CrossTenantReference as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     await log_service_usage(
         db,
         tenant_id=current_user.tenant_id,
@@ -151,12 +158,18 @@ async def add_item(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Cotización no encontrada",
         )
-    item = await quotes_service.add_quote_item(
-        db=db,
-        tenant_id=current_user.tenant_id,
-        quote=quote,
-        data=body,
-    )
+    try:
+        item = await quotes_service.add_quote_item(
+            db=db,
+            tenant_id=current_user.tenant_id,
+            quote=quote,
+            data=body,
+        )
+    except CrossTenantReference as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     return QuoteItemOut.model_validate(item)
 
 
