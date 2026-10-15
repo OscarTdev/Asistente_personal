@@ -8,6 +8,7 @@ import {
   Contact,
   ContactDetail,
   ContactMessagesPage,
+  ContactNote,
   ContactPage,
   ContactUpdatePayload,
   DashboardStats,
@@ -228,6 +229,7 @@ export interface ContactsQuery {
   limit: number
   search?: string
   activeOnly: boolean
+  tag?: string
 }
 
 export function fetchContacts(query: ContactsQuery): Promise<ContactPage> {
@@ -238,6 +240,9 @@ export function fetchContacts(query: ContactsQuery): Promise<ContactPage> {
   })
   if (query.search) {
     params.set('search', query.search)
+  }
+  if (query.tag) {
+    params.set('tag', query.tag)
   }
   return apiFetch<ContactPage>(`/contacts?${params.toString()}`)
 }
@@ -256,6 +261,42 @@ export function fetchContactMessages(
     limit: String(limit),
   })
   return apiFetch<ContactMessagesPage>(`/contacts/${id}/messages?${params.toString()}`)
+}
+
+// ── Mini CRM: etiquetas, notas y cotizaciones por cliente ───────────────────
+
+export function fetchContactTags(): Promise<string[]> {
+  return apiFetch<string[]>('/contacts/tags')
+}
+
+export function fetchContactNotes(id: string): Promise<ContactNote[]> {
+  return apiFetch<ContactNote[]>(`/contacts/${id}/notes`)
+}
+
+export function createContactNote(
+  id: string,
+  content: string
+): Promise<ContactNote> {
+  return apiFetch<ContactNote>(`/contacts/${id}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+}
+
+export function deleteContactNote(contactId: string, noteId: string): Promise<void> {
+  return apiFetch<void>(`/contacts/${contactId}/notes/${noteId}`, { method: 'DELETE' })
+}
+
+export interface ContactQuote {
+  id: string
+  status: string
+  total: number
+  created_at: string
+}
+
+export function fetchContactQuotes(id: string): Promise<ContactQuote[]> {
+  return apiFetch<ContactQuote[]>(`/contacts/${id}/quotes`)
 }
 
 export function updateContact(

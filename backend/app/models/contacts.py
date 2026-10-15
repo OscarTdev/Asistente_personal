@@ -1,6 +1,7 @@
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -26,3 +27,8 @@ class Contact(Base, TimestampMixin):
     # Onboarding conversacional (rol de entrada del bot): estado del registro
     # de un prospecto — "ask_bot_name", "ask_owner_name:<nombre elegido>", None.
     onboarding_state: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # ── Mini CRM ─────────────────────────────────────────────────────────
+    # Etiquetas del negocio para segmentar ("vip", "por cobrar", ...).
+    tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)

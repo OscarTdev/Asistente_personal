@@ -150,6 +150,113 @@ async def test_contact_messages_isolated_by_tenant(
     assert resp.status_code == HTTPStatus.NOT_FOUND
 
 
+# ── Mini CRM: etiquetas, notas y cotizaciones ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_contact_tags_email_address(
+    client: AsyncClient, auth_headers: dict[str, str], contact: Contact
+):
+    """La ficha guarda etiquetas (normalizadas), correo y dirección."""
+    resp = await client.put(
+        f"/api/v1/contacts/{contact.id}",
+        json={
+            "tags": ["  VIP ", "vip", "Por Cobrar"],
+            "email": "maria@correo.com",
+            "address": "Calle 10 #43-21",
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.OK
+    body = resp.json()
+    assert body["tags"] == ["vip", "por cobrar"]  # limpias, sin repetidas
+    assert body["email"] == "maria@correo.com"
+    assert body["address"] == "Calle 10 #43-21"
+
+
+@pytest.mark.asyncio
+async def test_list_contacts_filters_by_tag(
+    client: AsyncClient, auth_headers: dict[str, str], db_session: AsyncSession, tenant: Tenant
+):
+    """El filtro por etiqueta y el listado de etiquetas distintas."""
+    con_vip = Contact(tenant_id=tenant.id, wa_id="573001000001", tags=["vip"])
+    con_otro = Contact(tenant_id=tenant.id, wa_id="573001000002", tags=["nuevo"])
+    db_session.add_all([con_vip, con_otro])
+    await db_session.commit()
+
+    resp = await client.get(
+        "/api/v1/contacts?tag=vip", headers=auth_headers
+    )
+    assert resp.status_code == HTTPStatus.OK
+    page = resp.json()
+    assert page["total"] == 1
+    assert page["items"][0]["tags"] == ["vip"]
+
+    tags = await client.get("/api/v1/contacts/tags", headers=auth_headers)
+    assert sorted(tags.json()) == ["nuevo", "vip"]
+
+
+@pytest.mark.asyncio
+async def test_contact_notes_crud(
+    client: AsyncClient, auth_headers: dict[str, str], contact: Contact
+):
+    """Notas del cliente: crear, listar y borrado lógico."""
+    resp = await client.post(
+        f"/api/v1/contacts/{contact.id}/notes",
+        json={"content": "Pidió mantenimiento del tablero"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.CREATED
+    note_id = resp.json()["id"]
+
+    listing = await client.get(
+        f"/api/v1/contacts/{contact.id}/notes", headers=auth_headers
+    )
+    assert listing.status_code == HTTPStatus.OK
+    assert [n["content"] for n in listing.json()] == ["Pidió mantenimiento del tablero"]
+
+    deleted = await client.delete(
+        f"/api/v1/contacts/{contact.id}/notes/{note_id}", headers=auth_headers
+    )
+    assert deleted.status_code == HTTPStatus.NO_CONTENT
+
+    listing = await client.get(
+        f"/api/v1/contacts/{contact.id}/notes", headers=auth_headers
+    )
+    assert listing.json() == []
+
+
+@pytest.mark.asyncio
+async def test_contact_quotes_history(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    tenant: Tenant,
+    contact: Contact,
+):
+    """El historial de cotizaciones del cliente en su ficha."""
+    from app.models import Quote
+
+    db_session.add(
+        Quote(
+            tenant_id=tenant.id,
+            contact_id=contact.id,
+            status="sent",
+            total=45000,
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/contacts/{contact.id}/quotes", headers=auth_headers
+    )
+    assert resp.status_code == HTTPStatus.OK
+    quotes = resp.json()
+    assert len(quotes) == 1
+    assert quotes[0]["status"] == "sent"
+    assert quotes[0]["total"] == 45000
+
+
 @pytest.mark.asyncio
 async def test_list_contacts_empty(client: AsyncClient, auth_headers: dict[str, str]):
     """Sin clientes, la lista es vacía pero válida."""

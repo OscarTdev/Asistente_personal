@@ -8,12 +8,17 @@ import Modal from '../components/ui/modal'
 import Button from '../components/ui/button'
 import Switch from '../components/ui/switch'
 import ErrorSlip from '../components/ui/error-slip'
-import { IconPerson } from '../components/ui/icons'
+import { IconPerson, IconX } from '../components/ui/icons'
 import {
   useContact,
   useContactMessages,
+  useContactNotes,
+  useContactQuotes,
   useContacts,
+  useContactTags,
+  useCreateContactNote,
   useDeactivateContact,
+  useDeleteContactNote,
   useUpdateContact,
 } from '../hooks/useContacts'
 import { formatDate } from '../lib/format'
@@ -51,8 +56,17 @@ function ContactFicha({
   const deactivateContact = useDeactivateContact()
   const chat = useContactMessages(contactId)
   const chatRef = useRef<HTMLDivElement>(null)
+  const notesQuery = useContactNotes(contactId)
+  const createNote = useCreateContactNote(contactId)
+  const deleteNote = useDeleteContactNote(contactId)
+  const quotesQuery = useContactQuotes(contactId)
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [tags, setTags] = useState<string[]>([])
+  const [newTag, setNewTag] = useState('')
+  const [newNote, setNewNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
@@ -73,6 +87,9 @@ function ContactFicha({
     if (contact) {
       setName(contact.name ?? '')
       setNotes(contact.notes ?? '')
+      setEmail(contact.email ?? '')
+      setAddress(contact.address ?? '')
+      setTags(contact.tags ?? [])
       setFormError(null)
     }
   }, [contact])
@@ -84,6 +101,9 @@ function ContactFicha({
     const data: ContactUpdatePayload = {
       name: name.trim() || null,
       notes: notes.trim() || null,
+      tags,
+      email: email.trim() || null,
+      address: address.trim() || null,
     }
     setSaving(true)
     updateContact.mutate(
@@ -96,6 +116,23 @@ function ContactFicha({
         },
       }
     )
+  }
+
+  const handleAddTag = () => {
+    const tag = newTag.trim().toLowerCase()
+    if (tag && !tags.includes(tag) && tags.length < 10) {
+      setTags([...tags, tag])
+    }
+    setNewTag('')
+  }
+
+  const handleAddNote = () => {
+    const content = newNote.trim()
+    if (!content) return
+    createNote.mutate(content, {
+      onSuccess: () => setNewNote(''),
+      onError: (err) => setFormError(err.message),
+    })
   }
 
   const handleToggleActive = () => {
@@ -169,7 +206,7 @@ function ContactFicha({
             </div>
           </div>
 
-          {/* Edición */}
+          {/* Edición (mini CRM) */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-soft" htmlFor="contact-name">
@@ -184,7 +221,7 @@ function ContactFicha({
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-ink-soft" htmlFor="contact-notes">
-                Notas
+                Notas generales
               </label>
               <Input
                 id="contact-notes"
@@ -193,6 +230,181 @@ function ContactFicha({
                 placeholder="Ej: cliente de Laureles, paga puntual"
               />
             </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-soft" htmlFor="contact-email">
+                Correo
+              </label>
+              <Input
+                id="contact-email"
+                value={email}
+                onChangeValue={setEmail}
+                placeholder="cliente@correo.com"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-ink-soft" htmlFor="contact-address">
+                Dirección
+              </label>
+              <Input
+                id="contact-address"
+                value={address}
+                onChangeValue={setAddress}
+                placeholder="Calle 10 #43-21, Laureles"
+              />
+            </div>
+          </div>
+
+          {/* Etiquetas */}
+          <div>
+            <h3 className="plate-label mb-2">Etiquetas</h3>
+            <div className="flex flex-wrap items-center gap-2">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex items-center gap-1 rounded-full bg-pine-wash px-2.5 py-1 text-xs font-medium text-pine"
+                >
+                  {tag}
+                  <button
+                    type="button"
+                    aria-label={`Quitar etiqueta ${tag}`}
+                    className="text-pine/70 hover:text-lacre"
+                    onClick={() => setTags(tags.filter((t) => t !== tag))}
+                  >
+                    <IconX className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              <div className="flex items-center gap-1">
+                <Input
+                  value={newTag}
+                  onChangeValue={setNewTag}
+                  placeholder="Nueva etiqueta…"
+                  aria-label="Nueva etiqueta"
+                  className="h-8 w-32"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      handleAddTag()
+                    }
+                  }}
+                />
+                <Button type="button" variant="outline" size="sm" onClick={handleAddTag}>
+                  Agregar
+                </Button>
+              </div>
+              <span className="text-xs text-linen-600">
+                (se guardan con «Guardar cambios»)
+              </span>
+            </div>
+          </div>
+
+          {/* Cotizaciones del cliente */}
+          <div>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h3 className="plate-label">Cotizaciones</h3>
+              <span className="tabular text-xs text-linen-600">
+                {quotesQuery.data?.length ?? 0} en total
+              </span>
+            </div>
+            {quotesQuery.isLoading ? (
+              <div className="skel h-12 w-full" />
+            ) : (quotesQuery.data?.length ?? 0) === 0 ? (
+              <p className="text-xs text-linen-600">Sin cotizaciones todavía.</p>
+            ) : (
+              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                {quotesQuery.data?.map((quote) => (
+                  <div key={quote.id} className="ficha flex items-center gap-3 px-3 py-2">
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-medium ${
+                        quote.status === 'accepted'
+                          ? 'bg-ok-wash text-ok'
+                          : quote.status === 'sent'
+                            ? 'bg-brass/20 text-brass-deep'
+                            : 'bg-linen-100 text-linen-600'
+                      }`}
+                    >
+                      {quote.status}
+                    </span>
+                    <span className="tabular text-sm font-medium text-ink">
+                      ${quote.total.toLocaleString('es-CO')}
+                    </span>
+                    <time className="ml-auto tabular text-xs text-linen-600">
+                      {formatDate(quote.created_at)}
+                    </time>
+                    <a
+                      href={`/servicios/quoter/cotizaciones/${quote.id}`}
+                      className="rounded px-2 py-1 text-sm font-medium text-pine hover:bg-pine-wash"
+                    >
+                      Ver
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Notas del cliente (timeline) */}
+          <div>
+            <h3 className="plate-label mb-2">Notas del cliente</h3>
+            <div className="mb-3 flex gap-2">
+              <Input
+                value={newNote}
+                onChangeValue={setNewNote}
+                placeholder="Ej: 14/oct: pidió mantenimiento del tablero"
+                aria-label="Nueva nota del cliente"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleAddNote()
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleAddNote}
+                disabled={createNote.isLoading || !newNote.trim()}
+              >
+                {createNote.isLoading ? 'Guardando…' : 'Agregar nota'}
+              </Button>
+            </div>
+            {notesQuery.error && <ErrorSlip message={notesQuery.error.message} />}
+            {notesQuery.isLoading ? (
+              <div className="skel h-12 w-full" />
+            ) : (notesQuery.data?.length ?? 0) === 0 ? (
+              <p className="text-xs text-linen-600">
+                Sin notas. Las que tomes aquí y por chat se verán en la ficha.
+              </p>
+            ) : (
+              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                {notesQuery.data?.map((note) => (
+                  <div key={note.id} className="ficha px-3 py-2">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <time className="tabular text-xs text-linen-600">
+                        {formatDate(note.created_at)}
+                      </time>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm('¿Borrar esta nota?')) {
+                            deleteNote.mutate(note.id, {
+                              onError: (err) => setFormError(err.message),
+                            })
+                          }
+                        }}
+                        className="text-xs font-medium text-lacre hover:underline disabled:opacity-50"
+                        disabled={deleteNote.isLoading}
+                      >
+                        Borrar
+                      </button>
+                    </div>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-ink-soft">
+                      {note.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Historial de conversación */}
@@ -305,6 +517,7 @@ export default function ClientesPage() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [showRetired, setShowRetired] = useState(false)
+  const [tagFilter, setTagFilter] = useState<string | undefined>(undefined)
   const [page, setPage] = useState(0)
   const [openId, setOpenId] = useState<string | null>(null)
   const [heldIds, setHeldIds] = useState<Set<string>>(new Set())
@@ -323,8 +536,10 @@ export default function ClientesPage() {
     limit: PAGE_SIZE,
     search: debouncedSearch,
     activeOnly: !showRetired,
+    tag: tagFilter,
   })
   const updateContact = useUpdateContact()
+  const { data: availableTags } = useContactTags()
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
 
@@ -374,6 +589,27 @@ export default function ClientesPage() {
           <Switch checked={showRetired} onChange={setShowRetired} label="Mostrar clientes retirados" />
           Mostrar retirados
         </label>
+        {(availableTags?.length ?? 0) > 0 && (
+          <label className="flex items-center gap-2 text-sm text-ink-soft">
+            Etiqueta
+            <select
+              value={tagFilter ?? ''}
+              onChange={(e) => {
+                setTagFilter(e.target.value || undefined)
+                setPage(0)
+              }}
+              className="h-11 rounded-md border border-linen-300 bg-panel px-2 text-sm text-ink"
+              aria-label="Filtrar por etiqueta"
+            >
+              <option value="">Todas</option>
+              {availableTags?.map((tag) => (
+                <option key={tag} value={tag}>
+                  {tag}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {/* Errors as persistent errata slips */}
@@ -421,7 +657,21 @@ export default function ClientesPage() {
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pine-wash text-pine">
                           <IconPerson className="h-4 w-4" />
                         </span>
-                        {contact.name ?? 'Sin nombre'}
+                        <div>
+                          {contact.name ?? 'Sin nombre'}
+                          {(contact.tags?.length ?? 0) > 0 && (
+                            <div className="mt-0.5 flex flex-wrap gap-1">
+                              {contact.tags.map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="rounded-full bg-pine-wash px-1.5 py-0.5 text-[0.625rem] font-medium text-pine"
+                                >
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="tabular px-4 py-3 text-ink-soft">{contact.wa_id}</td>

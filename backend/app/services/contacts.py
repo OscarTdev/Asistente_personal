@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Contact, Conversation, Message, ServiceUsage
+from app.models import Contact, Conversation, Message, Note, Quote, ServiceUsage
 from app.schemas.contacts import ContactDetail, ContactOut, ContactUpdate
 
 
@@ -17,6 +17,7 @@ async def list_contacts(
     limit: int,
     search: str | None,
     active_only: bool,
+    tag: str | None = None,
 ) -> tuple[list[ContactOut], int]:
     """Lista los clientes del tenant con métricas de interacción."""
     last_at_sq = (
@@ -56,6 +57,9 @@ async def list_contacts(
     if search:
         pattern = f"%{search}%"
         conditions.append(or_(Contact.name.ilike(pattern), Contact.wa_id.ilike(pattern)))
+    if tag:
+        # JSONB containment: tags @> '["etiqueta"]'
+        conditions.append(Contact.tags.contains([tag]))
 
     total = (
         await db.execute(select(func.count()).select_from(Contact).where(*conditions))
@@ -89,6 +93,9 @@ async def list_contacts(
             last_interaction_at=last_at,
             messages_count=int(messages),
             interactions_count=int(interactions),
+            tags=list(contact.tags or []),
+            email=contact.email,
+            address=contact.address,
         )
         for contact, last_at, messages, interactions in rows
     ]
@@ -148,6 +155,9 @@ async def get_contact(
         messages_count=len(messages),
         interactions_count=int(interactions),
         recent_messages=list(messages),
+        tags=list(contact.tags or []),
+        email=contact.email,
+        address=contact.address,
     )
 
 
@@ -219,6 +229,12 @@ async def update_contact(
         contact.notes = data.notes.strip() or None
     if data.is_active is not None:
         contact.is_active = data.is_active
+    if data.tags is not None:
+        contact.tags = data.tags or None
+    if data.email is not None:
+        contact.email = data.email.strip() or None
+    if data.address is not None:
+        contact.address = data.address.strip() or None
 
     await db.commit()
     await db.refresh(contact)
@@ -243,3 +259,105 @@ async def deactivate_contact(
     contact.is_active = False
     await db.commit()
     return True
+
+
+# ── Mini CRM: etiquetas y notas por cliente ─────────────────────────────────
+
+
+async def list_distinct_tags(db: AsyncSession, *, tenant_id: UUID) -> list[str]:
+    """Etiquetas distintas usadas por el tenant (para el filtro del panel)."""
+    rows = await db.execute(
+        select(func.jsonb_array_elements_text(Contact.tags).distinct()).where(
+            Contact.tenant_id == tenant_id, Contact.tags.is_not(None)
+        )
+    )
+    return sorted(str(r[0]) for r in rows.all())
+
+
+async def _get_contact_owned(
+    db: AsyncSession, *, tenant_id: UUID, contact_id: UUID
+) -> Contact | None:
+    return (
+        await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id, Contact.id == contact_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def list_contact_notes(
+    db: AsyncSession, *, tenant_id: UUID, contact_id: UUID
+) -> list[Note] | None:
+    """Notas activas del cliente (más recientes primero). None si no es suyo."""
+    if await _get_contact_owned(db, tenant_id=tenant_id, contact_id=contact_id) is None:
+        return None
+    return list(
+        (
+            await db.execute(
+                select(Note)
+                .where(
+                    Note.tenant_id == tenant_id,
+                    Note.contact_id == contact_id,
+                    Note.is_active.is_(True),
+                )
+                .order_by(Note.created_at.desc())
+            )
+        ).scalars().all()
+    )
+
+
+async def create_contact_note(
+    db: AsyncSession, *, tenant_id: UUID, contact_id: UUID, content: str
+) -> Note | None:
+    """Nueva nota ligada al cliente. None si el contacto no es del tenant."""
+    if await _get_contact_owned(db, tenant_id=tenant_id, contact_id=contact_id) is None:
+        return None
+    note = Note(
+        tenant_id=tenant_id,
+        contact_id=contact_id,
+        content=content.strip()[:2000],
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return note
+
+
+async def delete_contact_note(
+    db: AsyncSession, *, tenant_id: UUID, contact_id: UUID, note_id: UUID
+) -> bool:
+    """Borrado lógico de una nota del cliente (spec §13: recuperable)."""
+    note = (
+        await db.execute(
+            select(Note).where(
+                Note.tenant_id == tenant_id,
+                Note.id == note_id,
+                Note.contact_id == contact_id,
+                Note.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if note is None:
+        return False
+    note.is_active = False
+    await db.commit()
+    return True
+
+
+async def list_contact_quotes(
+    db: AsyncSession, *, tenant_id: UUID, contact_id: UUID, limit: int = 10
+) -> list[Quote] | None:
+    """Cotizaciones del cliente (más recientes primero). None si no es suyo."""
+    if await _get_contact_owned(db, tenant_id=tenant_id, contact_id=contact_id) is None:
+        return None
+    return list(
+        (
+            await db.execute(
+                select(Quote)
+                .where(Quote.tenant_id == tenant_id, Quote.contact_id == contact_id)
+                .order_by(Quote.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars().all()
+    )

@@ -178,6 +178,9 @@ export interface Contact {
   last_interaction_at: string | null
   messages_count: number
   interactions_count: number
+  tags: string[]
+  email: string | null
+  address: string | null
 }
 
 export interface ContactPage {
@@ -210,6 +213,15 @@ export interface ContactUpdatePayload {
   name?: string | null
   notes?: string | null
   is_active?: boolean
+  tags?: string[] | null
+  email?: string | null
+  address?: string | null
+}
+
+export interface ContactNote {
+  id: string
+  content: string
+  created_at: string
 }
 
 export interface Branding {

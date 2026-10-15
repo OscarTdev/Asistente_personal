@@ -1000,6 +1000,72 @@ async def _is_team_member(
     return identity is not None and identity.kind in ("owner", "team")
 
 
+async def _client_context_block(db: AsyncSession, conversation: Conversation) -> str:
+    """El bot recuerda quién es quién: memoria del cliente para el LLM.
+
+    Nombre, etiquetas, dirección, apuntes, cotizaciones y notas recientes.
+    Sin datos → bloque vacío (un desconocido se atiende igual).
+    """
+    from app.models import Note
+
+    if conversation.contact_id is None:
+        return ""
+    contact = (
+        await db.execute(select(Contact).where(Contact.id == conversation.contact_id))
+    ).scalar_one_or_none()
+    if contact is None:
+        return ""
+
+    lines: list[str] = []
+    if contact.name:
+        lines.append(f"- Se llama {contact.name}.")
+    if contact.tags:
+        lines.append(f"- Etiquetas: {', '.join(contact.tags)}.")
+    if contact.address:
+        lines.append(f"- Dirección: {contact.address}.")
+    if contact.notes:
+        lines.append(f"- Apuntes: {contact.notes[:300]}")
+
+    quotes = (
+        (
+            await db.execute(
+                select(Quote)
+                .where(Quote.contact_id == contact.id)
+                .order_by(Quote.created_at.desc())
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for quote in quotes:
+        fecha = quote.created_at.strftime("%d/%m/%Y") if quote.created_at else "s/f"
+        lines.append(f"- Cotización {fecha}: ${int(quote.total):,} ({quote.status}).")
+
+    notes = (
+        (
+            await db.execute(
+                select(Note)
+                .where(Note.contact_id == contact.id, Note.is_active.is_(True))
+                .order_by(Note.created_at.desc())
+                .limit(3)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for note in notes:
+        fecha = note.created_at.strftime("%d/%m/%Y") if note.created_at else "s/f"
+        lines.append(f"- Nota {fecha}: {note.content[:200]}")
+
+    if not lines:
+        return ""
+    return (
+        "\n\nCONTEXTO DEL CLIENTE (memoria del negocio; personaliza la "
+        "respuesta con naturalidad, sin recitar la lista):\n" + "\n".join(lines)
+    )
+
+
 async def _chat_reply(
     db: AsyncSession,
     *,
@@ -1014,12 +1080,14 @@ async def _chat_reply(
     """Conversa con el LLM usando el historial y responde por el canal."""
     settings = get_settings()
     history = await _conversation_history(db, conversation.id)
+    client_context = await _client_context_block(db, conversation)
     messages_payload = [
         {
             "role": "system",
             "content": system_prompt.format(
                 bot_name=tenant.bot_name, tenant_name=tenant.name
-            ),
+            )
+            + client_context,
         }
     ]
     for historical in history:

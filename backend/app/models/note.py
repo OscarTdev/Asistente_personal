@@ -28,3 +28,10 @@ class Note(Base, TimestampMixin):
     )
     # Breve etiqueta opcional para búsqueda ("compras", "cliente X")
     tag: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Mini CRM: nota ligada a un cliente concreto (None = nota general por chat)
+    contact_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("contacts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
