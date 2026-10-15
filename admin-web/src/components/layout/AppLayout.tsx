@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { IconLogout, IconPanel, IconPower, IconTag, IconWifi } from '../ui/icons'
+import { IconLogout, IconPanel, IconPerson, IconPower, IconTag, IconWifi } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -17,6 +17,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Panel', icon: IconPanel, end: true },
   { to: '/servicios', label: 'Servicios', icon: IconPower },
+  { to: '/negocio', label: 'Mi negocio', icon: IconPerson },
 ]
 
 export default function AppLayout() {

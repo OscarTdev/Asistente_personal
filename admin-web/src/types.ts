@@ -15,6 +15,14 @@ export interface PlanPrice {
   is_overridden: boolean
 }
 
+export interface PlanEntitlementItem {
+  plan: string
+  plan_label: string
+  module_key: string
+  module_name: string
+  allowed: boolean
+}
+
 export interface LoginResponse {
   access_token: string
   token_type: string

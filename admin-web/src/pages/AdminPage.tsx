@@ -1,15 +1,15 @@
 // Administración de la plataforma: planes y precios del negocio.
 // Solo administradores de la plataforma (is_platform_admin).
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Card from '../components/ui/card'
 import Button from '../components/ui/button'
 import Input from '../components/ui/input'
 import Modal from '../components/ui/modal'
+import Switch from '../components/ui/switch'
 import ErrorSlip from '../components/ui/error-slip'
 import { useAuth } from '../auth/AuthContext'
-import { usePlanPrices, useUpdatePlanPrice } from '../hooks/usePlans'
-import { useBranding, useDeleteBrandingLogo, useUploadBrandingLogo } from '../hooks/useBranding'
+import { usePlanPrices, useUpdatePlanEntitlement, useUpdatePlanPrice, usePlanEntitlements } from '../hooks/usePlans'
 import {
   useAdminTenant,
   useAdminTenants,
@@ -96,106 +96,6 @@ function PlanRow({ plan }: { plan: PlanPrice }) {
         </p>
       )}
     </div>
-  )
-}
-
-function BrandingCard() {
-  const { data, isLoading, error } = useBranding()
-  const upload = useUploadBrandingLogo()
-  const remove = useDeleteBrandingLogo()
-  const [note, setNote] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    setNote(null)
-    upload.mutate(file, {
-      onSuccess: () => setNote('Logo actualizado ✓'),
-      onError: (err) => setNote(`Error: ${err.message}`),
-    })
-    event.target.value = '' // permitir volver a subir el mismo archivo
-  }
-
-  const handleRemove = () => {
-    if (
-      !window.confirm(
-        '¿Quitar el logo? Los PDFs volverán al encabezado solo con texto.'
-      )
-    ) {
-      return
-    }
-    remove.mutate(undefined, {
-      onSuccess: () => setNote('Logo quitado ✓'),
-      onError: (err) => setNote(`Error: ${err.message}`),
-    })
-  }
-
-  return (
-    <Card className="mb-6 p-5">
-      <h2 className="mb-1 text-sm font-semibold text-ink">Marca del negocio</h2>
-      <p className="mb-4 text-xs text-linen-600">
-        El logo aparece en el encabezado de las cotizaciones y cuentas de
-        cobro (PNG, JPEG o WebP, máx 2 MB).
-      </p>
-      {error && (
-        <div className="mb-3">
-          <ErrorSlip message={error.message} />
-        </div>
-      )}
-      <div className="flex flex-wrap items-center gap-4">
-        {isLoading ? (
-          <div className="skel h-16 w-32" />
-        ) : data?.has_logo && data.logo_data_url ? (
-          <img
-            src={data.logo_data_url}
-            alt="Logo del negocio"
-            className="h-16 w-auto max-w-[200px] rounded border border-linen-200 bg-white object-contain p-1"
-          />
-        ) : (
-          <div className="flex h-16 w-32 items-center justify-center rounded border border-dashed border-linen-300 text-xs text-linen-600">
-            Sin logo
-          </div>
-        )}
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => inputRef.current?.click()}
-            disabled={upload.isLoading || remove.isLoading}
-          >
-            {upload.isLoading
-              ? 'Subiendo…'
-              : data?.has_logo
-                ? 'Cambiar logo'
-                : 'Subir logo'}
-          </Button>
-          {data?.has_logo && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleRemove}
-              disabled={upload.isLoading || remove.isLoading}
-            >
-              {remove.isLoading ? 'Quitando…' : 'Quitar'}
-            </Button>
-          )}
-        </div>
-        {note && (
-          <p className={`w-full text-xs ${note.startsWith('Error') ? 'text-lacre' : 'text-ok'}`}>
-            {note}
-          </p>
-        )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          className="hidden"
-          onChange={handleFile}
-        />
-      </div>
-    </Card>
   )
 }
 
@@ -504,6 +404,91 @@ function ClientsSection() {
   )
 }
 
+// ── Matriz gratis/VIP: qué servicio incluye cada plan ─────────────────────
+
+function EntitlementsMatrix() {
+  const { data, isLoading, error } = usePlanEntitlements()
+  const update = useUpdatePlanEntitlement()
+
+  const plans = [
+    { key: 'trial', label: 'Prueba (gratis)' },
+    { key: 'freemium', label: 'Freemium (gratis)' },
+    { key: 'premium', label: 'Premium (VIP)' },
+  ]
+
+  const cell = (moduleKey: string, planKey: string) =>
+    data?.find((i) => i.module_key === moduleKey && i.plan === planKey)
+
+  const handleToggle = (
+    moduleKey: string,
+    planKey: string,
+    allowed: boolean
+  ) => {
+    update.mutate({ plan: planKey, moduleKey, allowed })
+  }
+
+  return (
+    <Card className="p-5">
+      <h2 className="mb-1 text-sm font-semibold text-ink">Servicios por plan (gratis / VIP)</h2>
+      <p className="mb-4 text-xs text-linen-600">
+        Define qué servicio incluye cada plan. Apagado aquí = ningún negocio
+        en ese plan puede encenderlo, aunque sea solo para probarlo.
+      </p>
+      {error && <ErrorSlip message={error.message} />}
+      {isLoading ? (
+        <div className="skel h-32 w-full" />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="thead-edge bg-linen-50 text-left">
+                <th className="plate-label px-3 py-2 font-semibold">Servicio</th>
+                {plans.map((p) => (
+                  <th key={p.key} className="plate-label px-3 py-2 text-center font-semibold">
+                    {p.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(data ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-4 text-center text-xs text-linen-600">
+                    Sin servicios para mostrar.
+                  </td>
+                </tr>
+              )}
+              {[...new Set((data ?? []).map((i) => i.module_key))].map((moduleKey) => {
+                const name = data?.find((i) => i.module_key === moduleKey)?.module_name ?? moduleKey
+                return (
+                  <tr key={moduleKey} className="border-b border-linen-100 last:border-0">
+                    <td className="px-3 py-2 font-medium text-ink">{name}</td>
+                    {plans.map((p) => {
+                      const item = cell(moduleKey, p.key)
+                      return (
+                        <td key={p.key} className="px-3 py-2 text-center">
+                          <div className="flex justify-center">
+                            <Switch
+                              checked={item?.allowed ?? false}
+                              disabled={update.isLoading}
+                              onChange={(value) => handleToggle(moduleKey, p.key, value)}
+                              label={`${name} en ${p.label}`}
+                            />
+                          </div>
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export default function AdminPage() {
   const { user } = useAuth()
   const { data, isLoading, error } = usePlanPrices()
@@ -535,8 +520,6 @@ export default function AdminPage() {
 
       <ClientsSection />
 
-      <BrandingCard />
-
       <Card className="p-5">
         <h2 className="mb-1 text-sm font-semibold text-ink">Planes y precios</h2>
         <p className="mb-4 text-xs text-linen-600">
@@ -558,6 +541,8 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      <EntitlementsMatrix />
     </div>
   )
 }

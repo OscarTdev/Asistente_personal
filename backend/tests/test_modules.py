@@ -20,6 +20,33 @@ def auth_headers(admin_user: User) -> dict[str, str]:
 
 
 @pytest.fixture
+async def platform_admin_user(db_session: AsyncSession, tenant: Tenant) -> User:
+    user = User(
+        id=uuid.uuid4(),
+        tenant_id=tenant.id,
+        email="platform@example.com",
+        password_hash=hash_password("Secreta123!"),
+        role="admin",
+        is_active=True,
+        is_platform_admin=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest.fixture
+def platform_admin_headers(platform_admin_user: User) -> dict[str, str]:
+    token = create_access_token(
+        user_id=platform_admin_user.id,
+        tenant_id=platform_admin_user.tenant_id,
+        role=platform_admin_user.role,
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
 async def member_user(db_session: AsyncSession, tenant: Tenant) -> User:
     user = User(
         id=uuid.uuid4(),
@@ -85,6 +112,75 @@ async def test_modules_order_sub_services_and_workspaces(
     # Un servicio sin construir sigue en desarrollo y sin workspace
     assert data["collections"]["dev_status"] == "development"
     assert data["collections"]["workspace"] is None
+
+
+@pytest.mark.asyncio
+async def test_cannot_enable_module_outside_plan(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    """El contrato de planes: un tenant en Prueba no puede encender un
+    servicio VIP él mismo — ni por el toggle del panel del negocio."""
+    await client.get("/api/v1/modules", headers=auth_headers)  # inicializar
+
+    resp = await client.put(
+        "/api/v1/modules/collections",
+        json={"is_enabled": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+
+
+@pytest.mark.asyncio
+async def test_plan_entitlements_matrix_and_override(
+    client: AsyncClient,
+    platform_admin_headers: dict[str, str],
+    db_session: AsyncSession,
+):
+    """La matriz gratis/VIP: defaults del código y override del super admin."""
+    from app.core.modules_registry import plan_entitlements
+
+    # 1) Defaults: freemium incluye quoter y reminders, no collections
+    resp = await client.get(
+        "/api/v1/admin/plan-entitlements", headers=platform_admin_headers
+    )
+    assert resp.status_code == HTTPStatus.OK
+    matrix = {(i["plan"], i["module_key"]): i["allowed"] for i in resp.json()}
+    assert matrix[("trial", "quoter")] is True
+    assert matrix[("freemium", "reminders")] is True
+    assert matrix[("freemium", "collections")] is False
+
+    # 2) Override: el super admin da collections a freemium
+    resp = await client.put(
+        "/api/v1/admin/plan-entitlements/freemium/collections",
+        json={"allowed": True},
+        headers=platform_admin_headers,
+    )
+    assert resp.status_code == HTTPStatus.OK
+
+    resp = await client.get(
+        "/api/v1/admin/plan-entitlements", headers=platform_admin_headers
+    )
+    matrix = {(i["plan"], i["module_key"]): i["allowed"] for i in resp.json()}
+    assert matrix[("freemium", "collections")] is True
+    # Los demás no se mueven
+    assert matrix[("trial", "collections")] is False
+
+    # 3) El override rige: module_allowed lo respeta
+    from app.services.entitlements import module_allowed
+
+    allowed = await module_allowed(db_session, plan="freemium", module_key="collections")
+    assert allowed is True
+    # default de código sigue como respaldo para lo no tocado
+    assert "quoter" in plan_entitlements("freemium")
+
+
+@pytest.mark.asyncio
+async def test_plan_entitlements_requires_platform_admin(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    """Un admin de negocio NO toca la matriz de planes."""
+    resp = await client.get("/api/v1/admin/plan-entitlements", headers=auth_headers)
+    assert resp.status_code == HTTPStatus.FORBIDDEN
 
 
 @pytest.mark.asyncio

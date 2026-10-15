@@ -21,8 +21,9 @@ from app.core.modules_registry import (
     module_parent,
     module_workspace,
 )
-from app.models import TenantModule, User
+from app.models import Tenant, TenantModule, User
 from app.schemas.modules import ModuleCreate, ModuleInfo, ModuleToggle, ModuleUpdate
+from app.services.entitlements import module_allowed
 
 router = APIRouter()
 _require_admin = require_role("admin")
@@ -159,6 +160,23 @@ async def update_module(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Módulo '{module_key}' no encontrado",
         )
+
+    # Contrato de planes: nadie enciende un servicio que su plan no autoriza
+    # (la matriz la define el super admin; defaults en modules_registry).
+    if body.is_enabled:
+        tenant = (
+            await db.execute(
+                select(Tenant).where(Tenant.id == current_user.tenant_id)
+            )
+        ).scalar_one()
+        if not await module_allowed(db, plan=tenant.plan, module_key=module_key):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Tu plan actual no incluye este servicio. "
+                    "Actualiza tu suscripción para activarlo."
+                ),
+            )
 
     if isinstance(body, ModuleUpdate):
         if body.name is not None:

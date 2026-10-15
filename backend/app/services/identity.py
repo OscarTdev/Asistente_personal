@@ -128,8 +128,12 @@ async def resolve_identity(
         if identity is not None:
             identity.external_id = external_id
             await db.flush()
+            # Sin el teléfono real en logs — dato personal (Ley 1581);
+            # el LID es un identificador interno y puede quedar.
             logger.info(
-                "Identidad %s/%s migrada a %s", channel, alias_external_id, external_id
+                "Identidad %s/%s migrada al identificador real",
+                channel,
+                alias_external_id,
             )
     if identity is not None:
         contact = (

@@ -13,6 +13,7 @@ import QuoteDetailPage from './pages/QuoteDetailPage'
 import ClientesPage from './pages/ClientesPage'
 import AdminPage from './pages/AdminPage'
 import RemindersPage from './pages/RemindersPage'
+import NegocioPage from './pages/NegocioPage'
 
 function App() {
   const { user } = useAuth()
@@ -40,6 +41,7 @@ function App() {
         </Route>
         <Route path="/servicios/reminders" element={<RemindersPage />} />
         <Route path="/servicios/crm" element={<ClientesPage />} />
+        <Route path="/negocio" element={<NegocioPage />} />
         <Route path="/conexion" element={<ConexionPage />} />
         <Route path="/admin" element={<AdminPage />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}

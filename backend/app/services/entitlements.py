@@ -3,7 +3,8 @@
 `apply_plan` es LA pieza que sincroniza el plan con los módulos: activa los
 incluidos, apaga los que quedan fuera, deja historial en `subscriptions` y
 un evento para el feed del panel. Nadie enciende un servicio que su plan no
-autoriza: la validación vive en el router de admin (contrato de entitlements).
+autoriza: la validación vive en `module_allowed` — con los overrides del
+Admin (matriz gratis/VIP) y los defaults del código como respaldo.
 """
 
 import logging
@@ -18,7 +19,14 @@ from app.core.modules_registry import (
     PLAN_ENTITLEMENTS,
     plan_entitlements,
 )
-from app.models import Event, PaymentMethod, Subscription, Tenant, TenantModule
+from app.models import (
+    Event,
+    PaymentMethod,
+    PlanEntitlement,
+    Subscription,
+    Tenant,
+    TenantModule,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +38,69 @@ PLAN_SUBSCRIPTION_STATUS: dict[str, str] = {
 }
 
 SUBSCRIPTION_PERIOD_DAYS = 30
+
+
+# ── Matriz gratis/VIP (overrides del Admin) ────────────────────────────────
+
+
+async def module_allowed(
+    db: AsyncSession, *, plan: str, module_key: str
+) -> bool:
+    """¿El plan autoriza el servicio? Override del Admin o default del código."""
+    row = (
+        await db.execute(
+            select(PlanEntitlement).where(
+                PlanEntitlement.plan == plan,
+                PlanEntitlement.module_key == module_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is not None:
+        return row.allowed
+    return module_key in plan_entitlements(plan)
+
+
+async def plan_modules(db: AsyncSession, *, plan: str) -> dict[str, bool]:
+    """Estado de cada servicio para el plan: override o default."""
+    overrides = {
+        row.module_key: row.allowed
+        for row in (
+            await db.execute(
+                select(PlanEntitlement).where(PlanEntitlement.plan == plan)
+            )
+        ).scalars()
+    }
+    defaults = plan_entitlements(plan)
+    return {
+        definition["key"]: overrides.get(
+            definition["key"], definition["key"] in defaults
+        )
+        for definition in AVAILABLE_MODULES
+    }
+
+
+async def set_entitlement(
+    db: AsyncSession, *, plan: str, module_key: str, allowed: bool
+) -> PlanEntitlement:
+    """Crea o actualiza un override de la matriz (upsert)."""
+    row = (
+        await db.execute(
+            select(PlanEntitlement).where(
+                PlanEntitlement.plan == plan,
+                PlanEntitlement.module_key == module_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if row is None:
+        row = PlanEntitlement(plan=plan, module_key=module_key, allowed=allowed)
+        db.add(row)
+    else:
+        row.allowed = allowed
+    await db.commit()
+    logger.info(
+        "Matriz de planes: %s/%s → %s (super admin)", plan, module_key, allowed
+    )
+    return row
 
 
 async def apply_plan(
@@ -48,7 +119,7 @@ async def apply_plan(
         await db.execute(select(Tenant).where(Tenant.id == tenant_id))
     ).scalar_one()
     previous_plan = tenant.plan
-    entitled = plan_entitlements(plan)
+    entitled = await plan_modules(db, plan=plan)
 
     # 1) Módulos: encender los del plan, apagar el resto (upsert; sin tocar filas ya correctas)
     existing = {
@@ -61,7 +132,7 @@ async def apply_plan(
     }
     for definition in AVAILABLE_MODULES:
         key = definition["key"]
-        should_enable = key in entitled
+        should_enable = entitled.get(key, False)
         row = existing.get(key)
         if row is None:
             db.add(

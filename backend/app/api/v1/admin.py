@@ -9,6 +9,7 @@ import logging
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,7 +58,12 @@ from app.schemas.admin import (
     TenantWhatsappUpdate,
 )
 from app.services import plan_prices
-from app.services.entitlements import apply_plan
+from app.services.entitlements import (
+    apply_plan,
+    module_allowed,
+    plan_modules,
+    set_entitlement,
+)
 from app.services.identity import link_identity
 from app.services.mercadopago import create_checkout_link
 
@@ -173,7 +179,9 @@ async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
                 category=tm.category,
                 dev_status=module_dev_status(tm.module_key),
                 is_enabled=tm.is_enabled,
-                entitled=plan_allows(tenant.plan, tm.module_key),
+                entitled=await module_allowed(
+                    db, plan=tenant.plan, module_key=tm.module_key
+                ),
             )
             for tm in modules
         ],
@@ -447,7 +455,9 @@ async def toggle_tenant_module(
             detail=f"Servicio '{module_key}' no encontrado",
         )
 
-    if body.is_enabled and not plan_allows(tenant.plan, module_key):
+    if body.is_enabled and not await module_allowed(
+        db, plan=tenant.plan, module_key=module_key
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
@@ -679,6 +689,59 @@ async def create_tenant_checkout_link(
         price_cop=price,
         whatsapp_sent=whatsapp_sent,
     )
+
+
+# ── Servicios por plan (la matriz gratis/VIP del super admin) ───────────────
+
+
+class EntitlementUpdate(BaseModel):
+    allowed: bool
+
+
+@router.get("/plan-entitlements")
+async def list_plan_entitlements(
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """Matriz completa: cada servicio × cada plan, con su estado."""
+    matrix: list[dict] = []
+    for plan in PLAN_LABELS:
+        state = await plan_modules(db, plan=plan)
+        for definition in AVAILABLE_MODULES:
+            key = definition["key"]
+            matrix.append(
+                {
+                    "plan": plan,
+                    "plan_label": PLAN_LABELS[plan],
+                    "module_key": key,
+                    "module_name": definition["name"],
+                    "allowed": state.get(key, False),
+                }
+            )
+    return matrix
+
+
+@router.put("/plan-entitlements/{plan}/{module_key}")
+async def update_plan_entitlement(
+    plan: str,
+    module_key: str,
+    body: EntitlementUpdate,
+    _admin: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Define si un plan incluye un servicio (la matriz gratis/VIP)."""
+    if plan not in PLAN_LABELS:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan no encontrado"
+        )
+    if module_key not in {m["key"] for m in AVAILABLE_MODULES}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Servicio no encontrado"
+        )
+    await set_entitlement(
+        db, plan=plan, module_key=module_key, allowed=body.allowed
+    )
+    return {"plan": plan, "module_key": module_key, "allowed": body.allowed}
 
 
 # ── Planes y precios ───────────────────────────────────────────────────────

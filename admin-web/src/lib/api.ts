@@ -17,6 +17,7 @@ import {
   FollowUpRunResult,
   LoginResponse,
   Module,
+  PlanEntitlementItem,
   PlanPrice,
   Quote,
   QuoteCreatePayload,
@@ -365,6 +366,27 @@ export function updatePlanPrice(plan: string, priceCop: number): Promise<PlanPri
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ price_cop: priceCop }),
   })
+}
+
+// ── Matriz gratis/VIP (servicios por plan) ──────────────────────────────────
+
+export function fetchPlanEntitlements(): Promise<PlanEntitlementItem[]> {
+  return apiFetch<PlanEntitlementItem[]>('/admin/plan-entitlements')
+}
+
+export function updatePlanEntitlement(
+  plan: string,
+  moduleKey: string,
+  allowed: boolean
+): Promise<{ plan: string; module_key: string; allowed: boolean }> {
+  return apiFetch<{ plan: string; module_key: string; allowed: boolean }>(
+    `/admin/plan-entitlements/${encodeURIComponent(plan)}/${encodeURIComponent(moduleKey)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowed }),
+    }
+  )
 }
 
 // ── Branding (logo del negocio en los PDFs) ─────────────────────────────────
