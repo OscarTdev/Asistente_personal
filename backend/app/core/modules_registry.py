@@ -155,10 +155,23 @@ AVAILABLE_MODULES: list[ModuleDefinition] = [
 ]
 
 # Servicios ya construidos; el resto se listan como "En desarrollo"
-DEV_STATUS: dict[str, str] = {"quoter": "active", "follow_up": "active"}
+DEV_STATUS: dict[str, str] = {
+    "quoter": "active",
+    "follow_up": "active",
+    "crm": "active",
+    "reminders": "active",
+}
 
-# Workspace del panel para servicios activos (ruta relativa bajo /servicios)
-WORKSPACE_ROUTE: dict[str, str] = {"quoter": "/servicios/quoter"}
+# Workspace del panel para servicios activos (donde vive "Entrar")
+WORKSPACE_ROUTE: dict[str, str] = {
+    "quoter": "/servicios/quoter",
+    "crm": "/clientes",
+    "reminders": "/servicios/reminders",
+}
+
+# Sub-servicios: viven DENTRO del workspace de su servicio padre, no como
+# carta propia en la lista de Servicios (p. ej. el seguimiento del cotizador)
+PARENT_MODULE: dict[str, str] = {"follow_up": "quoter"}
 
 
 def module_dev_status(key: str) -> str:
@@ -171,6 +184,11 @@ def module_workspace(key: str) -> str | None:
     if module_dev_status(key) != "active":
         return None
     return WORKSPACE_ROUTE.get(key)
+
+
+def module_parent(key: str) -> str | None:
+    """Servicio padre si este módulo es un sub-servicio (None = carta propia)."""
+    return PARENT_MODULE.get(key)
 
 
 # ── Planes de suscripción ─────────────────────────────────────────────────

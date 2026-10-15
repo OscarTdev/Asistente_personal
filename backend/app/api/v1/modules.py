@@ -18,6 +18,7 @@ from app.core.database import get_db
 from app.core.modules_registry import (
     AVAILABLE_MODULES,
     module_dev_status,
+    module_parent,
     module_workspace,
 )
 from app.models import TenantModule, User
@@ -81,6 +82,7 @@ async def list_modules(
             is_custom=row.is_custom,
             dev_status=module_dev_status(row.module_key),
             workspace=module_workspace(row.module_key),
+            parent=module_parent(row.module_key),
         )
         for row in rows
     ]
@@ -134,6 +136,7 @@ async def create_module(
         is_custom=module.is_custom,
         dev_status=module_dev_status(module.module_key),
         workspace=module_workspace(module.module_key),
+        parent=module_parent(module.module_key),
     )
 
 
@@ -181,6 +184,7 @@ async def update_module(
         is_custom=module.is_custom,
         dev_status=module_dev_status(module.module_key),
         workspace=module_workspace(module.module_key),
+        parent=module_parent(module.module_key),
     )
 
 

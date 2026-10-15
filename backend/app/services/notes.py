@@ -142,3 +142,49 @@ async def mark_reminder_sent(db: AsyncSession, reminder: Reminder) -> None:
     reminder.status = "sent"
     reminder.sent_at = datetime.now(UTC)
     await db.commit()
+
+
+# ── Panel: la agenda visible ────────────────────────────────────────────────
+
+
+async def list_reminders(
+    db: AsyncSession, *, tenant_id: UUID, status: str | None = None, limit: int = 50
+) -> list[Reminder]:
+    """Agenda del panel.
+
+    status="pending" → próximos y vencidos, ordenados por hora ascendente
+    (los vencidos primero: son lo más urgente). Otro estado → historial.
+    Sin estado → todo lo reciente.
+    """
+    stmt = select(Reminder).where(Reminder.tenant_id == tenant_id)
+    if status == "pending":
+        stmt = stmt.where(Reminder.status == "pending").order_by(
+            Reminder.remind_at.asc()
+        )
+    elif status:
+        stmt = stmt.where(Reminder.status == status).order_by(
+            Reminder.created_at.desc()
+        )
+    else:
+        stmt = stmt.order_by(Reminder.remind_at.desc())
+    return list((await db.execute(stmt.limit(limit))).scalars().all())
+
+
+async def set_reminder_status(
+    db: AsyncSession, *, tenant_id: UUID, reminder_id: UUID, status: str
+) -> Reminder | None:
+    """Cierre manual del panel. None si no existe o ya fue cerrado/enviado."""
+    reminder = (
+        await db.execute(
+            select(Reminder).where(
+                Reminder.tenant_id == tenant_id, Reminder.id == reminder_id
+            )
+        )
+    ).scalar_one_or_none()
+    if reminder is None or reminder.status != "pending":
+        return None
+    reminder.status = status
+    if status == "done":
+        reminder.sent_at = datetime.now(UTC)
+    await db.commit()
+    return reminder

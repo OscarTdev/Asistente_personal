@@ -12,6 +12,7 @@ import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import ClientesPage from './pages/ClientesPage'
 import AdminPage from './pages/AdminPage'
+import RemindersPage from './pages/RemindersPage'
 
 function App() {
   const { user } = useAuth()
@@ -37,9 +38,12 @@ function App() {
           <Route path="cotizaciones/:id" element={<QuoteDetailPage />} />
           <Route path="seguimiento" element={<FollowUpPage />} />
         </Route>
+        <Route path="/servicios/reminders" element={<RemindersPage />} />
         <Route path="/clientes" element={<ClientesPage />} />
         <Route path="/conexion" element={<ConexionPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        {/* Rutas antiguas → nuevas, por memoria muscular */}
+        <Route path="/agenda" element={<Navigate to="/servicios/reminders" replace />} />
         {/* Rutas antiguas → nuevas, por memoria muscular */}
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
         <Route path="/catalog" element={<Navigate to="/servicios/quoter/catalogo" replace />} />

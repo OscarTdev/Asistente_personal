@@ -16,6 +16,9 @@ class ModuleInfo(BaseModel):
     is_custom: bool = False
     dev_status: str = "development"
     workspace: str | None = None
+    # Sub-servicio de otro módulo (p. ej. follow_up → quoter): no se
+    # muestra como carta propia en la lista de Servicios
+    parent: str | None = None
 
 
 class ModuleToggle(BaseModel):

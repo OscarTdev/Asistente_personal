@@ -1,12 +1,14 @@
-// Seguimiento de cotizaciones: enviadas sin respuesta, sus rondas de
-// recordatorio y el botón para ejecutar una ronda ahora.
+// Seguimiento de cotizaciones: sub-servicio del Cotizador. Su interruptor
+// vive aquí (no en la lista de Servicios) porque es parte de este workspace.
 
 import { useState } from 'react'
 import Card from '../components/ui/card'
 import Button from '../components/ui/button'
+import Switch from '../components/ui/switch'
 import ErrorSlip from '../components/ui/error-slip'
 import { useAuth } from '../auth/AuthContext'
 import { useFollowupPending, useRunFollowup } from '../hooks/useFollowup'
+import { useModules, useToggleModule } from '../hooks/useModules'
 import { formatCOP, formatDate } from '../lib/format'
 
 export default function FollowUpPage() {
@@ -14,7 +16,19 @@ export default function FollowUpPage() {
   const isAdmin = user?.role === 'admin'
   const { data, isLoading, error } = useFollowupPending()
   const runFollowup = useRunFollowup()
+  const { data: modules } = useModules()
+  const toggleModule = useToggleModule()
   const [runResult, setRunResult] = useState<string | null>(null)
+  const [toggling, setToggling] = useState(false)
+  const followUpModule = modules?.find((m) => m.key === 'follow_up')
+
+  const handleToggle = (value: boolean) => {
+    setToggling(true)
+    toggleModule.mutate(
+      { moduleKey: 'follow_up', isEnabled: value },
+      { onSettled: () => setToggling(false) }
+    )
+  }
 
   const handleRun = () => {
     setRunResult(null)
@@ -43,6 +57,37 @@ export default function FollowUpPage() {
 
   return (
     <div>
+      {/* Sub-servicio de Cotizador: su interruptor vive aquí */}
+      {isAdmin && followUpModule && (
+        <Card className="mb-6 flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <p className="text-sm font-semibold text-ink">
+              Sub-servicio de Cotizador
+              <span
+                className={`ml-2 rounded-full px-2 py-1 text-xs font-medium ${
+                  followUpModule.is_enabled
+                    ? 'bg-ok-wash text-ok'
+                    : 'bg-linen-100 text-linen-600'
+                }`}
+              >
+                {followUpModule.is_enabled ? 'En servicio' : 'Apagado'}
+              </span>
+            </p>
+            <p className="mt-1 max-w-xl text-xs text-linen-600">
+              Encendido: el bot escribe a los 3 y 7 días a los clientes que no
+              han respondido su cotización. Apagado: las cotizaciones esperan
+              quietas.
+            </p>
+          </div>
+          <Switch
+            checked={followUpModule.is_enabled}
+            disabled={toggling}
+            onChange={handleToggle}
+            label="Encender o apagar el seguimiento"
+          />
+        </Card>
+      )}
+
       {/* Desk header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>

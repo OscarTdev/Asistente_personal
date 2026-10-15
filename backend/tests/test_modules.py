@@ -53,6 +53,41 @@ async def test_list_modules_initializes_defaults(
 
 
 @pytest.mark.asyncio
+async def test_modules_order_sub_services_and_workspaces(
+    client: AsyncClient, auth_headers: dict[str, str]
+):
+    """El orden de la lista: sub-servicios marcados con padre y servicios
+    activos con su workspace (el botón Entrar del panel)."""
+    await client.get("/api/v1/modules", headers=auth_headers)
+    resp = await client.get("/api/v1/modules", headers=auth_headers)
+    assert resp.status_code == HTTPStatus.OK
+    data = {m["key"]: m for m in resp.json()}
+
+    # El seguimiento es un sub-servicio del cotizador, no una carta propia
+    assert data["follow_up"]["parent"] == "quoter"
+    # Los demás servicios no tienen padre
+    assert data["quoter"]["parent"] is None
+    assert data["reminders"]["parent"] is None
+    assert data["crm"]["parent"] is None
+
+    # Servicios construidos con su workspace (botón Entrar)
+    assert data["quoter"]["dev_status"] == "active"
+    assert data["quoter"]["workspace"] == "/servicios/quoter"
+    assert data["crm"]["dev_status"] == "active"
+    assert data["crm"]["workspace"] == "/clientes"
+    assert data["reminders"]["dev_status"] == "active"
+    assert data["reminders"]["workspace"] == "/servicios/reminders"
+
+    # Un sub-servicio activo no tiene workspace propio: vive dentro del padre
+    assert data["follow_up"]["dev_status"] == "active"
+    assert data["follow_up"]["workspace"] is None
+
+    # Un servicio sin construir sigue en desarrollo y sin workspace
+    assert data["collections"]["dev_status"] == "development"
+    assert data["collections"]["workspace"] is None
+
+
+@pytest.mark.asyncio
 async def test_toggle_module_state(
     client: AsyncClient, auth_headers: dict[str, str]
 ):

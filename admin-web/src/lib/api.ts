@@ -25,6 +25,7 @@ import {
   QuoteItemUpdatePayload,
   QuotePage,
   QuoteUpdatePayload,
+  Reminder,
   WhatsappConnectResult,
   WhatsappStatus,
 } from '../types'
@@ -297,6 +298,36 @@ export interface ContactQuote {
 
 export function fetchContactQuotes(id: string): Promise<ContactQuote[]> {
   return apiFetch<ContactQuote[]>(`/contacts/${id}/quotes`)
+}
+
+// ── Agenda (recordatorios) ──────────────────────────────────────────────────
+
+export function fetchReminders(statusFilter?: string): Promise<Reminder[]> {
+  const params = new URLSearchParams()
+  if (statusFilter) {
+    params.set('status', statusFilter)
+  }
+  const qs = params.toString()
+  return apiFetch<Reminder[]>(`/reminders${qs ? `?${qs}` : ''}`)
+}
+
+export function createReminder(content: string, remindAt: string): Promise<Reminder> {
+  return apiFetch<Reminder>('/reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, remind_at: remindAt }),
+  })
+}
+
+export function setReminderStatus(
+  id: string,
+  status: 'done' | 'cancelled'
+): Promise<Reminder> {
+  return apiFetch<Reminder>(`/reminders/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  })
 }
 
 export function updateContact(

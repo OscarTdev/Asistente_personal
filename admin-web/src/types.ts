@@ -48,6 +48,7 @@ export interface Module {
   is_custom: boolean
   dev_status: 'active' | 'development'
   workspace: string | null
+  parent: string | null
 }
 
 export interface CatalogItem {
@@ -221,6 +222,15 @@ export interface ContactUpdatePayload {
 export interface ContactNote {
   id: string
   content: string
+  created_at: string
+}
+
+export interface Reminder {
+  id: string
+  content: string
+  remind_at: string
+  status: string
+  sent_at: string | null
   created_at: string
 }
 
