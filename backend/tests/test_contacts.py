@@ -63,6 +63,93 @@ async def contact_with_history(
     return contact, message
 
 
+# ── Historial tipo chat ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_contact_messages_order_and_total(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    contact_with_history,
+):
+    """El historial es descendente (más reciente primero) y trae el total."""
+    contact, first_message = contact_with_history
+
+    newer = Message(
+        tenant_id=contact.tenant_id,
+        conversation_id=first_message.conversation_id,
+        direction="out",
+        type="text",
+        content="Lista tu cotización",
+        whatsapp_message_id="wamid-test-2",
+        status="sent",
+    )
+    db_session.add(newer)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/contacts/{contact.id}/messages", headers=auth_headers
+    )
+    assert resp.status_code == HTTPStatus.OK
+    page = resp.json()
+    assert page["total"] == 2
+    assert page["items"][0]["id"] == str(newer.id)
+    assert page["items"][1]["id"] == str(first_message.id)
+    assert page["items"][1]["direction"] == "in"
+
+
+@pytest.mark.asyncio
+async def test_contact_messages_pagination(
+    client: AsyncClient, auth_headers: dict[str, str], contact_with_history
+):
+    """skip/limit truncan la página; el total refleja todo el historial."""
+    contact, first_message = contact_with_history
+
+    resp = await client.get(
+        f"/api/v1/contacts/{contact.id}/messages?limit=1&skip=0",
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.OK
+    page = resp.json()
+    assert page["total"] == 1
+    assert len(page["items"]) == 1
+    assert page["items"][0]["id"] == str(first_message.id)
+
+    # Más allá del total: página vacía, sin error
+    resp = await client.get(
+        f"/api/v1/contacts/{contact.id}/messages?limit=1&skip=1",
+        headers=auth_headers,
+    )
+    assert resp.status_code == HTTPStatus.OK
+    assert resp.json()["items"] == []
+
+
+@pytest.mark.asyncio
+async def test_contact_messages_isolated_by_tenant(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    tenant: Tenant,
+):
+    """Un contacto de OTRO tenant no es visible desde este panel."""
+    other_tenant = Tenant(
+        id=uuid.uuid4(), name="Otro", slug="otro", bot_name="Otro", is_active=True
+    )
+    db_session.add(other_tenant)
+    await db_session.flush()  # el contacto necesita su tenant ya persistido
+    other_contact = Contact(
+        tenant_id=other_tenant.id, wa_id="573009990099", name="Ajeno"
+    )
+    db_session.add(other_contact)
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/v1/contacts/{other_contact.id}/messages", headers=auth_headers
+    )
+    assert resp.status_code == HTTPStatus.NOT_FOUND
+
+
 @pytest.mark.asyncio
 async def test_list_contacts_empty(client: AsyncClient, auth_headers: dict[str, str]):
     """Sin clientes, la lista es vacía pero válida."""

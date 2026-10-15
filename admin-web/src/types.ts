@@ -199,6 +199,13 @@ export interface ContactDetail extends Contact {
   recent_messages: ContactMessage[]
 }
 
+export interface ContactMessagesPage {
+  items: ContactMessage[]
+  total: number
+  skip: number
+  limit: number
+}
+
 export interface ContactUpdatePayload {
   name?: string | null
   notes?: string | null

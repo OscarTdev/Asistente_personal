@@ -1,8 +1,14 @@
 // Data hooks for the clients (WhatsApp contacts) API.
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { deactivateContact, fetchContact, fetchContacts, updateContact } from '../lib/api'
-import { Contact, ContactDetail, ContactPage, ContactUpdatePayload } from '../types'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  deactivateContact,
+  fetchContact,
+  fetchContactMessages,
+  fetchContacts,
+  updateContact,
+} from '../lib/api'
+import { Contact, ContactDetail, ContactMessagesPage, ContactPage, ContactUpdatePayload } from '../types'
 
 export interface ContactsParams {
   skip: number
@@ -30,6 +36,22 @@ export function useContact(id: string) {
     queryKey: ['contact', id],
     queryFn: () => fetchContact(id),
     enabled: Boolean(id),
+  })
+}
+
+const MESSAGES_PAGE_SIZE = 30
+
+export function useContactMessages(contactId: string) {
+  // Historial paginado: página 1 = los más recientes; "cargar anteriores"
+  // trae páginas hacia atrás. Se muestra en orden cronológico.
+  return useInfiniteQuery<ContactMessagesPage, Error>({
+    queryKey: ['contact-messages', contactId],
+    queryFn: (context) =>
+      fetchContactMessages(contactId, Number(context.pageParam ?? 0), MESSAGES_PAGE_SIZE),
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.reduce((acc, page) => acc + page.items.length, 0)
+      return fetched < lastPage.total ? fetched : undefined
+    },
   })
 }
 

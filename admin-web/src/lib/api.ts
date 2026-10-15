@@ -6,6 +6,7 @@ import {
   CatalogPage,
   Contact,
   ContactDetail,
+  ContactMessagesPage,
   ContactPage,
   ContactUpdatePayload,
   DashboardStats,
@@ -242,6 +243,18 @@ export function fetchContacts(query: ContactsQuery): Promise<ContactPage> {
 
 export function fetchContact(id: string): Promise<ContactDetail> {
   return apiFetch<ContactDetail>(`/contacts/${id}`)
+}
+
+export function fetchContactMessages(
+  id: string,
+  skip: number,
+  limit: number
+): Promise<ContactMessagesPage> {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  })
+  return apiFetch<ContactMessagesPage>(`/contacts/${id}/messages?${params.toString()}`)
 }
 
 export function updateContact(

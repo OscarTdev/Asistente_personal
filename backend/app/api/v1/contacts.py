@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models import User
-from app.schemas.contacts import ContactDetail, ContactOut, ContactPage, ContactUpdate
+from app.schemas.contacts import (
+    ContactDetail,
+    ContactMessage,
+    ContactMessagesPage,
+    ContactOut,
+    ContactPage,
+    ContactUpdate,
+)
 from app.services import contacts as contacts_service
 
 router = APIRouter()
@@ -51,6 +58,36 @@ async def get_contact(
             detail="Cliente no encontrado",
         )
     return detail
+
+
+@router.get("/{contact_id}/messages", response_model=ContactMessagesPage)
+async def list_contact_messages(
+    contact_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ContactMessagesPage:
+    """Historial de conversación del cliente (paginado, más reciente primero)."""
+    result = await contacts_service.list_contact_messages(
+        db,
+        tenant_id=current_user.tenant_id,
+        contact_id=contact_id,
+        skip=skip,
+        limit=limit,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado",
+        )
+    messages, total = result
+    return ContactMessagesPage(
+        items=[ContactMessage.model_validate(m) for m in messages],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
 
 
 @router.put("/{contact_id}", response_model=ContactOut)

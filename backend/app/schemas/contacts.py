@@ -43,6 +43,15 @@ class ContactDetail(ContactOut):
     recent_messages: list[ContactMessage] = []
 
 
+class ContactMessagesPage(BaseModel):
+    """Historial paginado del cliente (más reciente primero)."""
+
+    items: list[ContactMessage]
+    total: int
+    skip: int
+    limit: int
+
+
 class ContactUpdate(BaseModel):
     """Campos editables del cliente desde el panel."""
 

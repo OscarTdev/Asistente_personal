@@ -151,6 +151,51 @@ async def get_contact(
     )
 
 
+async def list_contact_messages(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    contact_id: UUID,
+    skip: int,
+    limit: int,
+) -> tuple[list[Message], int] | None:
+    """Historial paginado del cliente a través de todos sus hilos.
+
+    Más reciente primero (el panel muestra burbujas y carga hacia atrás).
+    None si el contacto no existe o no pertenece al tenant.
+    """
+    contact = (
+        await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant_id, Contact.id == contact_id
+            )
+        )
+    ).scalar_one_or_none()
+    if contact is None:
+        return None
+
+    base = (
+        select(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.tenant_id == tenant_id, Conversation.contact_id == contact_id)
+    )
+    total = (
+        await db.execute(select(func.count()).select_from(base.subquery()))
+    ).scalar_one()
+    messages = (
+        (
+            await db.execute(
+                base.order_by(Message.created_at.desc(), Message.id.desc())
+                .offset(skip)
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(messages), int(total)
+
+
 async def update_contact(
     db: AsyncSession,
     *,

@@ -1,7 +1,7 @@
 // Clientes del asistente: quiénes escriben al bot, su última interacción y
 // su ficha editable (nombre, notas, retirar/reactivar).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Card from '../components/ui/card'
 import Input from '../components/ui/input'
 import Modal from '../components/ui/modal'
@@ -11,12 +11,29 @@ import ErrorSlip from '../components/ui/error-slip'
 import { IconPerson } from '../components/ui/icons'
 import {
   useContact,
+  useContactMessages,
   useContacts,
   useDeactivateContact,
   useUpdateContact,
 } from '../hooks/useContacts'
 import { formatDate } from '../lib/format'
-import { Contact, ContactUpdatePayload } from '../types'
+import { Contact, ContactMessage, ContactUpdatePayload } from '../types'
+
+const TYPE_MARKERS: Record<string, string> = {
+  audio: '🎤 Nota de voz',
+  image: '📷 Imagen',
+  document: '📄 Documento',
+}
+
+function typeBadge(type: string): string {
+  return type === 'text' ? '' : ` · ${TYPE_MARKERS[type] ?? type}`
+}
+
+function messageBody(message: ContactMessage): string {
+  const text = message.content?.trim()
+  if (text) return text
+  return TYPE_MARKERS[message.type] ?? '(sin contenido)'
+}
 
 const PAGE_SIZE = 10
 
@@ -32,10 +49,25 @@ function ContactFicha({
   const { data: contact, isLoading, error } = useContact(contactId)
   const updateContact = useUpdateContact()
   const deactivateContact = useDeactivateContact()
+  const chat = useContactMessages(contactId)
+  const chatRef = useRef<HTMLDivElement>(null)
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  // Al abrir la ficha (primera página cargada): mostrar lo más reciente abajo
+  useEffect(() => {
+    const el = chatRef.current
+    if (
+      el &&
+      chat.data &&
+      chat.data.pages.length === 1 &&
+      chat.data.pages[0].items.length > 0
+    ) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [chat.data])
 
   useEffect(() => {
     if (contact) {
@@ -163,33 +195,78 @@ function ContactFicha({
             </div>
           </div>
 
-          {/* Mensajes recientes */}
+          {/* Historial de conversación */}
           <div>
-            <h3 className="plate-label mb-2">Mensajes recientes</h3>
-            {contact.recent_messages.length === 0 ? (
-              <p className="text-xs text-linen-600">
-                Aún no hay mensajes registrados de este cliente.
-              </p>
-            ) : (
-              <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                {contact.recent_messages.map((message) => (
-                  <div key={message.id} className="ficha px-3 py-2">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="plate-label">
-                        {message.direction === 'in' ? 'Recibido' : 'Enviado'}
-                        {message.type !== 'text' ? ` · ${message.type}` : ''}
-                      </span>
-                      <time className="tabular text-xs text-linen-600">
-                        {formatDate(message.created_at)}
-                      </time>
+            <div className="mb-2 flex items-baseline justify-between">
+              <h3 className="plate-label">Historial de conversación</h3>
+              {chat.data && (
+                <span className="tabular text-xs text-linen-600">
+                  {chat.data.pages[0]?.total ?? 0} mensajes
+                </span>
+              )}
+            </div>
+            {chat.error && <ErrorSlip message={chat.error.message} />}
+            <div ref={chatRef} className="max-h-96 space-y-2 overflow-y-auto pr-1">
+              {chat.isLoading ? (
+                <div className="skel h-20 w-full" />
+              ) : (chat.data?.pages[0]?.total ?? 0) === 0 ? (
+                <p className="text-xs text-linen-600">
+                  Aún no hay mensajes registrados de este cliente.
+                </p>
+              ) : (
+                <>
+                  {chat.hasPreviousPage && (
+                    <div className="flex justify-center pb-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => chat.fetchPreviousPage()}
+                        disabled={chat.isFetchingPreviousPage}
+                      >
+                        {chat.isFetchingPreviousPage ? 'Cargando…' : 'Cargar anteriores'}
+                      </Button>
                     </div>
-                    <p className="mt-0.5 truncate text-sm text-ink-soft">
-                      {message.content ?? '(sin contenido)'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
+                  )}
+                  {[...(chat.data?.pages ?? [])]
+                    .flatMap((page) => page.items)
+                    .reverse()
+                    .map((message) => (
+                      <div
+                        key={message.id}
+                        className={`flex ${message.direction === 'out' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div
+                          className={`max-w-[78%] rounded-lg px-3 py-2 ${
+                            message.direction === 'out'
+                              ? 'bg-pine text-[#f4f1e9]'
+                              : 'border border-linen-200 bg-panel'
+                          }`}
+                        >
+                          <div className="flex items-baseline justify-between gap-3">
+                            <span
+                              className={`text-[0.6875rem] font-semibold uppercase tracking-[0.09em] ${
+                                message.direction === 'out'
+                                  ? 'text-linen-300'
+                                  : 'text-linen-600'
+                              }`}
+                            >
+                              {message.direction === 'out' ? 'Aura' : 'Cliente'}
+                              {typeBadge(message.type)}
+                            </span>
+                            <time className="tabular text-[0.6875rem] opacity-70">
+                              {formatDate(message.created_at)}
+                            </time>
+                          </div>
+                          <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">
+                            {messageBody(message)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </>
+              )}
+            </div>
           </div>
 
           {formError && <ErrorSlip message={formError} />}
