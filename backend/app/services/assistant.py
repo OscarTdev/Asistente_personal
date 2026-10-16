@@ -39,6 +39,10 @@ INTENCIONES:
 - "visit_report": el dueño pide generar un INFORME DE VISITA TECNICA (hallazgos y recomendaciones).
   Ejemplos: "informe de visita para Juliana: revisé el tablero, cambié 2 breakers", "genera un informe de la visita técnica a la obra de Pedro".
   Extrae el contacto en "contact_name", los hallazgos en "description" y el monto si lo menciona en "amount".
+- "maintenance": el dueño registra o consulta un MANTENIMIENTO PREVENTIVO (avisos periódicos a un cliente).
+  Ejemplos: "programa mantenimiento de aire acondicionado para Juliana cada 6 meses", "qué mantenimientos tengo", "agenda revisión del tablero para Pedro en 3 meses".
+  Para programar: "contact_name" (cliente), "message_text" (qué mantener), "remind_at" (fecha ISO del próximo).
+  Para consultar: sin campos adicionales.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

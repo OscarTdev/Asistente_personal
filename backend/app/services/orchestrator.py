@@ -521,6 +521,116 @@ async def _handle_visit_report(
         )
 
 
+async def _handle_maintenance(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Mantenimiento preventivo: programar avisos recurrentes (spec §13).
+
+    «programa mantenimiento de aire para Juliana cada 6 meses»
+    → registra el mantenimiento y el bot avisa cuando toque.
+    """
+    from app.services.maintenance import parse_frequency_days
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    # ¿Es consulta o programación?
+    text_lower = (intent.message_text or "").lower()
+    query_words = ("qué mantenimientos", "que mantenimientos", "mis mantenimientos")
+    if any(w in text_lower for w in query_words):
+        # Listar mantenimientos activos
+        from sqlalchemy import select as sel
+
+        from app.models import Maintenance
+        items = list(
+            (
+                await db.execute(
+                    sel(Maintenance)
+                    .where(
+                        Maintenance.tenant_id == tenant.id,
+                        Maintenance.status == "active",
+                    )
+                    .order_by(Maintenance.next_due.asc())
+                )
+            ).scalars().all()
+        )
+        if not items:
+            await tell_owner(
+                "No tienes mantenimientos programados. "
+                "Dime «programa mantenimiento de X para [cliente] cada N meses»."
+            )
+        else:
+            lines = ["🔧 Tus mantenimientos:\n"]
+            for m in items:
+                contact = (
+                    await db.execute(
+                        sel(Contact).where(Contact.id == m.contact_id)
+                    )
+                ).scalar_one_or_none()
+                name = contact.name if contact else "—"
+                due = m.next_due.strftime("%d/%m/%Y")
+                lines.append(f"• {m.description[:50]} — {name} — próximo: {due}")
+            await tell_owner("\n".join(lines))
+        return
+
+    # Programar: necesita cliente, descripción y frecuencia
+    if not intent.contact_name:
+        await tell_owner("¿Para qué cliente programo el mantenimiento?")
+        return
+
+    matches = await _resolve_contact_by_name(
+        db, tenant_id=tenant.id, name=intent.contact_name
+    )
+    if len(matches) != 1:
+        names = ", ".join(c.name or c.wa_id for c in matches[:5])
+        await tell_owner(
+            f"Encontré: {names}. ¿A cuál?" if matches else
+            f"No encontré a «{intent.contact_name}»."
+        )
+        return
+    target = matches[0]
+
+    description = (intent.message_text or intent.description or "").strip()
+    if not description:
+        await tell_owner("¿Qué mantenimiento debo programar? (ej: limpieza de aire)")
+        return
+
+    freq = parse_frequency_days(
+        intent.message_text or "" or description
+    )
+    if freq is None:
+        freq = 180  # semestral por defecto
+
+    from datetime import timedelta
+    next_due = datetime.now(UTC) + timedelta(days=freq)
+
+    from app.services.maintenance import schedule_maintenance as _sched
+    m = await _sched(
+        db,
+        tenant_id=tenant.id,
+        contact_id=target.id,
+        description=description,
+        frequency_days=freq,
+        next_due=next_due,
+    )
+
+    due_str = next_due.strftime("%d/%m/%Y")
+    await tell_owner(
+        f"🔧 Listo: «{description}» para {target.name or target.wa_id} "
+        f"cada {freq} días. Próximo aviso: {due_str}. "
+        f"Le escribiré a {target.name or 'tu cliente'} cuando toque."
+    )
+
+
 async def _handle_note(
     db: AsyncSession,
     *,
@@ -1542,6 +1652,13 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "maintenance":
+            await _handle_maintenance(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )

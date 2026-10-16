@@ -10,7 +10,7 @@ class AssistantIntent(BaseModel):
 
     intention: Literal[
         "send_message", "quote", "invoice", "confirm", "note",
-        "reminder", "collection", "visit_report", "chat",
+        "reminder", "collection", "visit_report", "maintenance", "chat",
     ] = "chat"
     contact_name: str | None = Field(default=None, max_length=100)
     message_text: str | None = Field(default=None, max_length=1000)

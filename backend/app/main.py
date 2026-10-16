@@ -52,6 +52,15 @@ async def _subscriptions_loop() -> None:
                 if expired:
                     logger.info("Suscripciones vencidas: %d", expired)
 
+                # 2) Mantenimientos preventivos vencidos
+                from app.channels import get_channel
+                from app.services.maintenance import send_maintenance_reminders
+                mt_sent = await send_maintenance_reminders(
+                    db, channel=get_channel("evolution")
+                )
+                if mt_sent:
+                    logger.info("Mantenimientos enviados: %d", mt_sent)
+
                 # 2) Recordatorios que ya llegaron a su hora
                 for reminder in await due_reminders(db):
                     try:

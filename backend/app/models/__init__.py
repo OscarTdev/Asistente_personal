@@ -10,6 +10,7 @@ from .document_counter import DocumentCounter
 from .events import Event
 from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
+from .maintenance import Maintenance
 from .messages import Message
 from .note import Note
 from .onboarding_session import OnboardingSession
@@ -62,4 +63,5 @@ __all__ = [
     "AuditLog",
     "Note",
     "Reminder",
+    "Maintenance",
 ]
