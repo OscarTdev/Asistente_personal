@@ -8,6 +8,7 @@ from .conversations import Conversation
 from .document import Document
 from .document_counter import DocumentCounter
 from .events import Event
+from .expense import Expense
 from .follow_ups import FollowUp
 from .llm_usage import LlmUsage
 from .maintenance import Maintenance
@@ -66,4 +67,5 @@ __all__ = [
     "Reminder",
     "Maintenance",
     "Warranty",
+    "Expense",
 ]

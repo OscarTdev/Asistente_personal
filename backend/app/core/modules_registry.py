@@ -165,6 +165,7 @@ DEV_STATUS: dict[str, str] = {
     "visit_report": "active",  # informe de visita técnica IV-0001
     "maintenance": "active",   # mantenimiento preventivo recurrente
     "warranties": "active",    # garantías de lo instalado
+    "personal_finance": "active",  # gastos por voz + resumen mensual
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar")

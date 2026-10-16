@@ -745,6 +745,82 @@ async def _handle_warranty(
     )
 
 
+async def _handle_expense(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Finanzas personales: registrar gastos y resumen mensual (spec §13).
+
+    «gasté 45 mil en cable» → categoría auto-detectada + registro
+    «cuánto he gastado este mes» → resumen por categoría
+    """
+    from app.services.expenses import (
+        _format_cop,
+        monthly_summary,
+        record_expense,
+    )
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    # ¿Consulta o registro?
+    text_lower = (intent.message_text or "").lower()
+    query_words = (
+        "cuánto he gastado", "cuanto he gastado", "resumen de gastos",
+        "mis gastos", "cuánto he gastado este mes", "resumen del mes",
+        "cuanto he gastado este mes", "cuánto he gastado", "gastos del mes",
+    )
+    if any(w in text_lower for w in query_words):
+        summary = await monthly_summary(db, tenant_id=tenant.id)
+        if summary["total"] == 0:
+            await tell_owner(
+                "No tienes gastos registrados este mes. "
+                "Dime «gasté [monto] en [qué]» para empezar."
+            )
+            return
+
+        lines = [f"📊 Gastos de {summary['month']}:\n"]
+        lines.append(f"TOTAL: {_format_cop(summary['total'])}\n")
+        for category, data in summary["categories"].items():
+            cat_total = data["total"]
+            lines.append(
+                f"• {category.title()}: {_format_cop(cat_total)} "
+                f"({data['count']} gasto{'s' if data['count'] > 1 else ''})"
+            )
+        await tell_owner("\n".join(lines))
+        return
+
+    # Registrar gasto
+    if intent.amount is None or intent.amount <= 0:
+        await tell_owner("¿Cuánto gastaste? Dime el monto (ej: 45000)")
+        return
+
+    description = (intent.description or "Gasto").strip()
+    if not description or description == "Gasto":
+        await tell_owner("¿En qué lo gastaste? (ej: cable, gasolina, almuerzo)")
+        return
+
+    from decimal import Decimal as D
+    amount = D(str(int(intent.amount)))
+    expense = await record_expense(
+        db, tenant_id=tenant.id,
+        description=description,
+        amount=amount,
+    )
+    await tell_owner(
+        f"💸 Gasto registrado: {_format_cop(amount)} en "
+        f"**{expense.category}** ({description})"
+    )
+
+
 async def _handle_note(
     db: AsyncSession,
     *,
@@ -1766,6 +1842,13 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "expense":
+            await _handle_expense(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )

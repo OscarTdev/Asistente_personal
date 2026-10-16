@@ -47,6 +47,10 @@ INTENCIONES:
   Ejemplos: "registra garantía para Juliana: breaker 30A, 1 año", "qué garantías tengo", "garantías vigentes de Pedro".
   Para registrar: "contact_name" (cliente), "description" (qué se instaló), "amount" NO aplica, usa "remind_at" como fecha de vencimiento ISO.
   Para consultar: sin campos adicionales.
+- "expense": el dueño registra un GASTO o consulta cuánto ha gastado.
+  Para registrar: "gasté 45 mil en cable", "compré gasolina por 30 mil", "almuerzo 15 mil".
+  Extrae el monto en "amount", la descripción en "description".
+  Para consultar: "cuánto he gastado este mes", "resumen de gastos", "mis gastos" → sin campos.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:
