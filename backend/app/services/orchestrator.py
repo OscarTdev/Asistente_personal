@@ -745,6 +745,231 @@ async def _handle_warranty(
     )
 
 
+async def _handle_site_log(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Bitácora de obra: abrir, registrar avance, consultar y cerrar (spec §13).
+
+    «abre obra para Juliana: instalación de tomacorrientes»
+    «registro: se instalaron 5 tomacorrientes, falta el tablero»
+    «qué obras tengo abiertas»
+    «cierra la obra de Juliana»
+    """
+    from app.services.site_log import (
+        active_sites,
+        add_entry,
+        close_site,
+        entries_of_site,
+        find_site_for_contact,
+        open_site,
+    )
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    text_lower = (intent.message_text or "").lower()
+
+    # Consultar obras abiertas
+    open_words = ("qué obras", "que obras", "mis obras", "obras abiertas")
+    if any(w in text_lower for w in open_words):
+        sites = await active_sites(db, tenant_id=tenant.id)
+        if not sites:
+            await tell_owner(
+                "🏗️ No tienes obras abiertas. "
+                "Dime «abre obra para [cliente]: [qué]»."
+            )
+            return
+        lines = ["🏗️ Tus obras abiertas:\n"]
+        for site in sites:
+            contact = (
+                await db.execute(select(Contact).where(Contact.id == site.contact_id))
+            ).scalar_one_or_none()
+            name = contact.name if contact else "—"
+            entries = await entries_of_site(db, site_id=site.id)
+            lines.append(f"• {site.title[:60]} — {name} ({len(entries)} registros)")
+        await tell_owner("\n".join(lines))
+        return
+
+    # Cerrar obra
+    close_words = ("cierra", "cerrar", "termina", "terminar", "finaliza", "ya terminé")
+    if any(w in text_lower for w in close_words) and intent.contact_name:
+        matches = await _resolve_contact_by_name(
+            db, tenant_id=tenant.id, name=intent.contact_name
+        )
+        if len(matches) == 1:
+            site = await find_site_for_contact(
+                db, tenant_id=tenant.id, contact_id=matches[0].id
+            )
+            if site:
+                await close_site(db, site_id=site.id)
+                await tell_owner(f"✅ Obra «{site.title[:50]}» cerrada.")
+            else:
+                await tell_owner("No encontré una obra abierta para ese cliente.")
+        else:
+            await tell_owner("No encontré a ese cliente.")
+        return
+
+    # Registrar avance (necesita obra abierta)
+    register_words = (
+        "registro", "avance", "avanzamos",
+        "se hizo", "se instaló", "instalé", "trabajé",
+    )
+    if any(w in text_lower for w in register_words):
+        note = (intent.message_text or intent.description or "").strip()
+        if not note:
+            await tell_owner("¿Qué quieres registrar? (ej: se instalaron 5 tomacorrientes)")
+            return
+
+        # Buscar la obra más reciente abierta (del dueño o del cliente mencionado)
+        if intent.contact_name:
+            matches = await _resolve_contact_by_name(
+                db, tenant_id=tenant.id, name=intent.contact_name
+            )
+            if len(matches) == 1:
+                site = await find_site_for_contact(
+                    db, tenant_id=tenant.id, contact_id=matches[0].id
+                )
+                if site:
+                    await add_entry(db, site_id=site.id, note=note)
+                    count = len(await entries_of_site(db, site_id=site.id))
+                    await tell_owner(
+                        f"📝 Registrado en «{site.title[:50]}» ({count} entradas)."
+                    )
+                    return
+
+        # Sin cliente específico: buscar la obra más reciente
+        sites = await active_sites(db, tenant_id=tenant.id)
+        if sites:
+            site = sites[0]
+            await add_entry(db, site_id=site.id, note=note)
+            count = len(await entries_of_site(db, site_id=site.id))
+            await tell_owner(
+                f"📝 Registrado en «{site.title[:50]}» ({count} entradas)."
+            )
+        else:
+            await tell_owner(
+                "No tienes obras abiertas. "
+                "Dime «abre obra» primero."
+            )
+        return
+
+    # Abrir obra
+    if intent.contact_name and intent.description:
+        matches = await _resolve_contact_by_name(
+            db, tenant_id=tenant.id, name=intent.contact_name
+        )
+        if len(matches) != 1:
+            await tell_owner(f"No encontré a «{intent.contact_name}» en tus contactos.")
+            return
+        site = await open_site(
+            db, tenant_id=tenant.id,
+            contact_id=matches[0].id,
+            title=intent.description,
+        )
+        await tell_owner(
+            f"🏗️ Obra abierta: «{site.title[:50]}» para "
+            f"{matches[0].name or matches[0].wa_id}. "
+            "Registra avances con «registro: [qué pasó hoy]»."
+        )
+    else:
+        await tell_owner(
+            "¿Para qué cliente y qué obra? "
+            "(ej: «abre obra para Juliana: instalación de tomacorrientes»)"
+        )
+
+
+async def _handle_profitability(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Rentabilidad: cotizado vs gastos reales de un trabajo (spec §13).
+
+    «rentabilidad del trabajo de Juliana» → cotización vs gastos.
+    """
+    from decimal import Decimal as D
+
+    from sqlalchemy import func
+
+    from app.models import Expense, Quote
+    from app.services.expenses import _format_cop
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    if not intent.contact_name:
+        await tell_owner("¿De qué cliente? Dime el nombre (ej: rentabilidad de Juliana).")
+        return
+
+    matches = await _resolve_contact_by_name(
+        db, tenant_id=tenant.id, name=intent.contact_name
+    )
+    if len(matches) != 1:
+        await tell_owner(f"No encontré a «{intent.contact_name}».")
+        return
+    target = matches[0]
+
+    # Buscar cotizaciones de este cliente
+    quotes = list(
+        (
+            await db.execute(
+                select(Quote)
+                .where(
+                    Quote.tenant_id == tenant.id,
+                    Quote.contact_id == target.id,
+                    Quote.status.in_(["sent", "accepted"]),
+                )
+                .order_by(Quote.created_at.desc())
+                .limit(5)
+            )
+        ).scalars().all()
+    )
+
+    if not quotes:
+        await tell_owner(
+            f"No encontré cotizaciones enviadas o aceptadas para "
+            f"{target.name or target.wa_id}."
+        )
+        return
+
+    # Sumar gastos del mes para este tenant (materiales relacionados)
+    total_quoted = sum((q.total or D("0")) for q in quotes)
+    total_expenses = (
+        await db.execute(
+            select(func.sum(Expense.amount))
+            .where(Expense.tenant_id == tenant.id)
+        )
+    ).scalar() or D("0")
+
+    # Calcular rentabilidad estimada
+    profit = total_quoted - total_expenses
+    margin = (float(profit) / float(total_quoted) * 100) if total_quoted else 0
+
+    await tell_owner(
+        f"💰 Rentabilidad de {target.name or target.wa_id}:\n\n"
+        f"Cotizado: {_format_cop(total_quoted)}\n"
+        f"Gastos totales (materiales): {_format_cop(total_expenses)}\n"
+        f"Ganancia: {_format_cop(profit) if profit > 0 else '-' + _format_cop(abs(profit))} "
+        f"({margin:.0f}% margen)"
+    )
+
+
 async def _handle_inventory(
     db: AsyncSession,
     *,
@@ -1939,6 +2164,20 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "site_log":
+            await _handle_site_log(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "profitability":
+            await _handle_profitability(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )

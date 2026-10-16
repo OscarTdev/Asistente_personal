@@ -55,6 +55,13 @@ INTENCIONES:
   Para agregar: "tengo 20 metros de cable", "compré 5 breakers 30A" → "amount" = cantidad, "description" = material.
   Para consultar: "qué inventario tengo", "mis materiales" → sin campos.
   Para descontar: "usé 15 metros de cable", "gasté 2 breakers" → "amount" = cantidad usada, "description" = material.
+- "site_log": el dueño gestiona una OBRA (bitácora de avance diario).
+  Para abrir: "abre obra para Juliana: instalación de tomacorrientes" → "contact_name" = cliente, "description" = título.
+  Para registrar avance: "registro: se instalaron 5 tomacorrientes" → "message_text" = nota del día.
+  Para consultar: "qué obras tengo abiertas" → sin campos.
+  Para cerrar: "cierra la obra de Juliana" → "contact_name" = cliente.
+- "profitability": el dueño pregunta cuánto ganó en un trabajo.
+  "rentabilidad del trabajo de Juliana", "cuánto gané con Pedro" → "contact_name" = cliente.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

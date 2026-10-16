@@ -26,6 +26,8 @@ from .quotes import Quote
 from .reminder import Reminder
 from .service_status import ServiceStatus
 from .service_usage import ServiceUsage
+from .site_log import SiteLog
+from .site_log_entry import SiteLogEntry
 from .subscriptions import Subscription
 from .tenant_branding import TenantBranding
 from .tenant_modules import TenantModule
@@ -70,4 +72,6 @@ __all__ = [
     "Warranty",
     "Expense",
     "InventoryItem",
+    "SiteLog",
+    "SiteLogEntry",
 ]
