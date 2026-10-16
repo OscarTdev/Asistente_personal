@@ -295,6 +295,126 @@ async def _handle_send_message(
     logger.info("Mensaje enviado por encargo del dueño (contacto %s)", target.id)
 
 
+async def _handle_collection(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Cobro de cartera: enviar un link de pago al cliente del dueño (spec §13).
+
+    «cobrale a Juliana 450 mil por la instalación» → Juliana recibe el link
+    de MercadoPago en su WhatsApp con un mensaje amable.
+    """
+    from app.services.mercadopago import create_collection_link
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    # Resolver el cliente
+    target: Contact | None = None
+    if intent.contact_name:
+        matches = await _resolve_contact_by_name(
+            db, tenant_id=tenant.id, name=intent.contact_name
+        )
+        if len(matches) == 1:
+            target = matches[0]
+        elif len(matches) > 1:
+            names = ", ".join(c.name or c.wa_id for c in matches[:5])
+            await tell_owner(f"Encontré varios: {names}. ¿A cuál le cobro?")
+            return
+        else:
+            await tell_owner(
+                f"No encontré a nadie llamado «{intent.contact_name}» en tus contactos."
+            )
+            return
+
+    if intent.amount is None or intent.amount <= 0:
+        await tell_owner("¿De cuánto es el cobro? (ej: 450000)")
+        return
+
+    amount = int(intent.amount)
+    description = intent.description or "Servicios prestados"
+
+    # Si no hay MP configurado, enviar solo el mensaje sin link
+    settings = get_settings()
+    mp_token = settings.mercadopago_access_token
+    link = ""
+    if mp_token:
+        try:
+            pref = await create_collection_link(
+                tenant=tenant,
+                amount_cop=amount,
+                description=description,
+                access_token=mp_token,
+                notification_url=settings.mercadopago_notification_url or None,
+            )
+            link = pref.get("init_point") or pref.get("sandbox_init_point") or ""
+        except Exception:
+            logger.exception("No se pudo crear el link de cobro de MP")
+
+    # Formatear el monto: 450000 → $450.000
+    amount_str = f"${amount:,.0f}".replace(",", ".")
+    target_name = target.name or target.wa_id if target else "tu cliente"
+
+    # Enviar el cobro al CLIENTE
+    if target:
+        msg = (
+            f"¡Hola {target.name or ''}! {tenant.name} te comparte un "
+            f"cobro por {description}: {amount_str}.\n\n"
+        )
+        if link:
+            msg += f"Puedes pagar aquí: {link}\n\n"
+        msg += "¡Gracias por tu negocio!"
+        await channel.send_text(target.wa_id, msg)
+
+        # Registrar en la conversación del CLIENTE
+        target_conv = (
+            await db.execute(
+                select(Conversation)
+                .where(Conversation.contact_id == target.id)
+                .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if target_conv is None:
+            target_conv = Conversation(
+                tenant_id=tenant.id, contact_id=target.id, status="open"
+            )
+            db.add(target_conv)
+            await db.flush()
+        db.add(
+            Message(
+                tenant_id=tenant.id,
+                conversation_id=target_conv.id,
+                direction="out",
+                type="text",
+                content=msg,
+                whatsapp_message_id=f"bot-{uuid.uuid4()}",
+                status="sent",
+            )
+        )
+        target_conv.last_message_at = datetime.now(UTC)
+        await db.commit()
+
+        mp_status = "Con link de pago." if link else "Sin link de MP (pendiente configurar)."
+        await tell_owner(
+            f"💰 Envié el cobro de {amount_str} a {target_name} "
+            f"por «{description}». {mp_status}"
+        )
+    else:
+        await tell_owner(
+            f"💰 Cobro de {amount_str} por «{description}». "
+            "Dime a qué contacto se lo envío."
+        )
+
+
 async def _handle_note(
     db: AsyncSession,
     *,
@@ -1313,6 +1433,13 @@ async def handle_incoming(
                     conversation=conversation, wa_id=wa_id, intent=intent,
                 )
                 return
+
+        if intent.intention == "collection":
+            await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
 
         if intent.intention == "note":
             usable, why = await _module_usable(db, tenant=tenant, module_key="voice_notes")

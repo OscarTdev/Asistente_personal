@@ -161,6 +161,7 @@ DEV_STATUS: dict[str, str] = {
     "crm": "active",
     "reminders": "active",
     "voice_notes": "active",  # STT (F7) + notas + recordatorios ya funcionan
+    "collections": "active",  # cobro de cartera con link de MercadoPago
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar")

@@ -33,6 +33,9 @@ INTENCIONES:
   Para "reminder", extrae la fecha/hora como ISO 8601 en "remind_at" y pon el qué recordar en "message_text".
 - "confirm": el dueño responde a una pregunta del asistente (SÍ/NO, enviar/no enviar).
   Ejemplos: "sí envíala", "dale", "ok", "claro", "no", "después", "envíala".
+- "collection": el dueño quiere COBRARLE a uno de sus clientes un monto por un trabajo ya hecho.
+  Ejemplos: "cobrale a Juliana 450 mil por la instalación", "genera un cobro para Pedro por 800 mil del tablero".
+  Para "collection", extrae el monto como número en "amount", el contacto en "contact_name" y el concepto en "description".
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

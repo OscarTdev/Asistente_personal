@@ -98,6 +98,45 @@ async def fetch_payment(*, payment_id: str, access_token: str) -> dict:
         return response.json()
 
 
+async def create_collection_link(
+    *,
+    tenant: Tenant,
+    amount_cop: int,
+    description: str,
+    access_token: str,
+    notification_url: str | None = None,
+) -> dict:
+    """Crea un link de cobro por un monto específico (no suscripción).
+
+    Para que el técnico le cobre a SU cliente por un trabajo ya hecho:
+    «cobrale a Juliana 450 mil» → Juliana recibe el link y paga.
+    """
+    preference: dict = {
+        "items": [
+            {
+                "id": f"collection-{tenant.id}",
+                "title": f"{description[:60]}",
+                "quantity": 1,
+                "currency_id": "COP",
+                "unit_price": amount_cop,
+            }
+        ],
+        "external_reference": str(tenant.id),
+        "metadata": {"type": "collection", "tenant_id": str(tenant.id)},
+    }
+    if notification_url:
+        preference["notification_url"] = notification_url
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.post(
+            f"{MP_API_URL}/checkout/preferences",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json=preference,
+        )
+        response.raise_for_status()
+        return response.json()
+
+
 async def create_checkout_link(
     *,
     tenant: Tenant,
