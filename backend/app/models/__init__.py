@@ -10,6 +10,7 @@ from .document_counter import DocumentCounter
 from .events import Event
 from .expense import Expense
 from .follow_ups import FollowUp
+from .inventory_item import InventoryItem
 from .llm_usage import LlmUsage
 from .maintenance import Maintenance
 from .messages import Message
@@ -68,4 +69,5 @@ __all__ = [
     "Maintenance",
     "Warranty",
     "Expense",
+    "InventoryItem",
 ]

@@ -51,6 +51,10 @@ INTENCIONES:
   Para registrar: "gasté 45 mil en cable", "compré gasolina por 30 mil", "almuerzo 15 mil".
   Extrae el monto en "amount", la descripción en "description".
   Para consultar: "cuánto he gastado este mes", "resumen de gastos", "mis gastos" → sin campos.
+- "inventory": el dueño registra, consulta o descuenta MATERIALES de su inventario.
+  Para agregar: "tengo 20 metros de cable", "compré 5 breakers 30A" → "amount" = cantidad, "description" = material.
+  Para consultar: "qué inventario tengo", "mis materiales" → sin campos.
+  Para descontar: "usé 15 metros de cable", "gasté 2 breakers" → "amount" = cantidad usada, "description" = material.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

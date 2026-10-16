@@ -745,6 +745,103 @@ async def _handle_warranty(
     )
 
 
+async def _handle_inventory(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Inventario de materiales: registrar, consultar y descontar (spec §13).
+
+    «tengo 20 metros de cable» / «qué inventario tengo» / «usé 5 breakers»
+    """
+    from app.services.inventory import (
+        _fmt_qty,
+        add_stock,
+        deduct_stock,
+        list_inventory,
+    )
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    text_lower = (intent.message_text or "").lower()
+
+    # Consultar
+    query_words = (
+        "qué inventario", "que inventario", "mis materiales",
+        "qué materiales tengo", "que materiales tengo", "inventario tengo",
+    )
+    if any(w in text_lower for w in query_words):
+        items = await list_inventory(db, tenant_id=tenant.id)
+        if not items:
+            await tell_owner(
+                "📦 Tu inventario está vacío. "
+                "Dime «tengo [cantidad] [unidad] de [material]» para empezar."
+            )
+            return
+        lines = ["📦 Tu inventario:\n"]
+        for it in items:
+            low = " ⚠️ BAJO" if it.min_quantity > 0 and it.quantity <= it.min_quantity else ""
+            lines.append(f"• {it.name[:60]}: {_fmt_qty(it.quantity, it.unit)}{low}")
+        await tell_owner("\n".join(lines))
+        return
+
+    # Descontar
+    deduct_words = (
+        "usé", "use", "gasté", "gaste",
+        "agoté", "agote", "quité", "quite",
+        "consumí", "consumi",
+    )
+    is_deduct = any(w in text_lower for w in deduct_words)
+
+    if intent.amount is None or intent.amount <= 0:
+        await tell_owner(
+            "¿Qué material? Dime la cantidad y el nombre "
+            "(ej: «tengo 20 metros de cable» o «usé 5 breakers»)."
+        )
+        return
+
+    description = (intent.description or "").strip()
+    if not description:
+        await tell_owner("¿Qué material? (ej: cable THHN, breaker 30A)")
+        return
+
+    from decimal import Decimal as D
+    qty = D(str(int(intent.amount)))
+
+    if is_deduct:
+        item = await deduct_stock(
+            db, tenant_id=tenant.id, name=description, quantity=qty,
+        )
+        if item is None:
+            await tell_owner(
+                f"No tienes suficiente «{description}» en inventario, "
+                "o el material no está registrado."
+            )
+        else:
+            await tell_owner(
+                f"📦 {item.name}: {_fmt_qty(item.quantity, item.unit)} "
+                f"restantes (desconté {qty})."
+            )
+    else:
+        item = await add_stock(
+            db, tenant_id=tenant.id,
+            name=description,
+            quantity=qty,
+        )
+        await tell_owner(
+            f"📦 Inventario actualizado: {item.name} → "
+            f"{_fmt_qty(item.quantity, item.unit)}."
+        )
+
+
 async def _handle_expense(
     db: AsyncSession,
     *,
@@ -1842,6 +1939,13 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "inventory":
+            await _handle_inventory(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )
