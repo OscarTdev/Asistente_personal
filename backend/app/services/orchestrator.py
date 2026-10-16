@@ -415,6 +415,112 @@ async def _handle_collection(
         )
 
 
+async def _handle_visit_report(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Informe de visita técnica: PDF con hallazgos para el cliente (spec §13).
+
+    «informe de visita para Juliana: revisé el tablero, cambié 2 breakers»
+    → genera el PDF y lo envía al dueño con opción de compartirlo.
+    """
+    from app.services.documents import next_document_number
+    from app.services.visit_report_pdf import generate_visit_report_pdf
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    description = (intent.description or "").strip()
+    if not description:
+        await tell_owner(
+            "¿Cuál fue el trabajo realizado? Descríbelo y genero el informe."
+        )
+        return
+
+    # Resolver el cliente
+    target: Contact | None = None
+    if intent.contact_name:
+        matches = await _resolve_contact_by_name(
+            db, tenant_id=tenant.id, name=intent.contact_name
+        )
+        if len(matches) == 1:
+            target = matches[0]
+
+    # Consecutivo del informe (IV-0001)
+    number = await next_document_number(db, tenant_id=tenant.id, doc_type="visit_report")
+    _DOC_PREFIX = {"visit_report": "IV"}
+    # El next_document_number usa el prefijo correcto internamente
+    # pero el resultado ya viene con el prefijo
+
+    # Generar PDF
+    tenant_orm = (
+        await db.execute(select(Tenant).where(Tenant.id == tenant.id))
+    ).scalar_one()
+    pdf_buffer = generate_visit_report_pdf(
+        tenant=tenant_orm,
+        contact=target,
+        report_number=number,
+        description=description,
+        findings=[],
+        recommendations=[],
+    )
+
+    import base64 as b64mod
+    pdf_b64 = b64mod.b64encode(pdf_buffer.getvalue()).decode("ascii")
+
+    # Enviar al dueño
+    client_label = target.name if target and target.name else "tu cliente"
+    await tell_owner(
+        f"📋 Informe de visita {number} listo para {client_label}. "
+        "Te lo dejo en PDF."
+    )
+    await channel.send_document(
+        wa_id, f"{number}.pdf", pdf_b64, "application/pdf"
+    )
+
+    # Registrar en la conversación del CLIENTE si existe
+    if target:
+        target_conv = (
+            await db.execute(
+                select(Conversation)
+                .where(Conversation.contact_id == target.id)
+                .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if target_conv is None:
+            target_conv = Conversation(
+                tenant_id=tenant.id, contact_id=target.id, status="open"
+            )
+            db.add(target_conv)
+            await db.flush()
+        db.add(
+            Message(
+                tenant_id=tenant.id,
+                conversation_id=target_conv.id,
+                direction="out",
+                type="document",
+                content=f"{number}.pdf",
+                whatsapp_message_id=f"bot-{uuid.uuid4()}",
+                status="sent",
+            )
+        )
+        target_conv.last_message_at = datetime.now(UTC)
+        await db.commit()
+
+        await tell_owner(
+            f"¿Quieres que le envíe el informe a {client_label}?"
+        )
+
+
 async def _handle_note(
     db: AsyncSession,
     *,
@@ -1436,6 +1542,13 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "visit_report":
+            await _handle_visit_report(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )

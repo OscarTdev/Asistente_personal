@@ -22,7 +22,7 @@ from app.models import Document, DocumentCounter, TenantBranding
 
 logger = logging.getLogger(__name__)
 
-_DOC_PREFIX = {"quote": "COT", "invoice": "CC"}
+_DOC_PREFIX = {"quote": "COT", "invoice": "CC", "visit_report": "IV"}
 
 
 async def next_document_number(

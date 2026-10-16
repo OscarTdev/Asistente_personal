@@ -36,6 +36,9 @@ INTENCIONES:
 - "collection": el dueño quiere COBRARLE a uno de sus clientes un monto por un trabajo ya hecho.
   Ejemplos: "cobrale a Juliana 450 mil por la instalación", "genera un cobro para Pedro por 800 mil del tablero".
   Para "collection", extrae el monto como número en "amount", el contacto en "contact_name" y el concepto en "description".
+- "visit_report": el dueño pide generar un INFORME DE VISITA TECNICA (hallazgos y recomendaciones).
+  Ejemplos: "informe de visita para Juliana: revisé el tablero, cambié 2 breakers", "genera un informe de la visita técnica a la obra de Pedro".
+  Extrae el contacto en "contact_name", los hallazgos en "description" y el monto si lo menciona en "amount".
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:
