@@ -4,19 +4,19 @@ import {
   fetchAdminTenants,
   fetchAdminTenant,
   updateAdminTenant,
-  setAdminTenantPlan,
+  changeAdminTenantPlan,
   setAdminTenantWhatsapp,
   fetchAdminConversations,
   fetchAdminMessages,
   addAdminPaymentMethod,
-  createAdminCheckoutLink,
+  createTenantCheckoutLink,
 } from '../lib/api'
 import type {
-  AdminTenant,
-  AdminTenantDetail,
-  AdminConversation,
-  AdminMessage,
-  CheckoutLinkResult,
+  TenantSummary,
+  TenantDetail,
+  TenantCheckoutResult,
+  TenantConversation,
+  TenantMessage,
 } from '../types'
 
 const PLAN_BADGES: Record<string, string> = {
@@ -27,15 +27,15 @@ const PLAN_BADGES: Record<string, string> = {
 
 export default function AdminPage() {
   const { user } = useAuth()
-  const [tenants, setTenants] = useState<AdminTenant[]>([])
-  const [selected, setSelected] = useState<AdminTenantDetail | null>(null)
-  const [conversations, setConversations] = useState<AdminConversation[]>([])
-  const [messages, setMessages] = useState<AdminMessage[]>([])
+  const [tenants, setTenants] = useState<TenantSummary[]>([])
+  const [selected, setSelected] = useState<TenantDetail | null>(null)
+  const [conversations, setConversations] = useState<TenantConversation[]>([])
+  const [messages, setMessages] = useState<TenantMessage[]>([])
   const [activeConv, setActiveConv] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [checkoutLink, setCheckoutLink] = useState<CheckoutLinkResult | null>(null)
+  const [checkoutLink, setCheckoutLink] = useState<TenantCheckoutResult | null>(null)
 
   const loadTenants = useCallback(async () => {
     setLoading(true)
@@ -101,7 +101,7 @@ export default function AdminPage() {
     if (!selected) return
     setSaving(true)
     try {
-      const updated = await setAdminTenantPlan(selected.id, plan)
+      const updated = await changeAdminTenantPlan(selected.id, plan)
       setSelected(updated)
       loadTenants()
     } catch (e: any) {
@@ -128,7 +128,7 @@ export default function AdminPage() {
     if (!selected) return
     setSaving(true)
     try {
-      const result = await createAdminCheckoutLink(selected.id, false)
+      const result = await createTenantCheckoutLink(selected.id)
       setCheckoutLink(result)
     } catch (e: any) {
       setError(e.message || 'Error creando link de pago')

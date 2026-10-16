@@ -459,6 +459,17 @@ export function createTenantCheckoutLink(
 
 // â”€â”€ WhatsApp (conexiÃ³n) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+export function updateAdminTenant(
+  id: string,
+  data: { name?: string; bot_name?: string; customer_mode?: boolean }
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+}
+
 export function fetchWhatsappStatus(): Promise<WhatsappStatus> {
   return apiFetch<WhatsappStatus>('/whatsapp/status')
 }
@@ -518,43 +529,12 @@ export async function downloadQuotePdf(quoteId: string): Promise<void> {
   link.remove()
   URL.revokeObjectURL(url)
 }
-// -- Administración de la plataforma (solo is_platform_admin) -------------
-
-export function fetchAdminTenants(): Promise<AdminTenant[]> {
-  return apiFetch<AdminTenant[]>('/admin/tenants')
-}
-
-export function fetchAdminTenant(id: string): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(/admin/tenants/)
-}
-
-export function updateAdminTenant(
-  id: string,
-  data: { name?: string; bot_name?: string; customer_mode?: boolean }
-): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(/admin/tenants/, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-}
-
-export function setAdminTenantPlan(
-  id: string,
-  plan: string
-): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(/admin/tenants//plan, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ plan }),
-  })
-}
 
 export function setAdminTenantWhatsapp(
   id: string,
   wa_id: string | null
-): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(/admin/tenants//whatsapp, {
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${id}/whatsapp`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wa_id }),
@@ -565,9 +545,9 @@ export function toggleAdminModule(
   tenantId: string,
   moduleKey: string,
   isEnabled: boolean
-): Promise<AdminModule> {
-  return apiFetch<AdminModule>(
-    /admin/tenants//modules/,
+): Promise<void> {
+  return apiFetch<void>(
+    `/admin/tenants/${tenantId}/modules/${encodeURIComponent(moduleKey)}`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -580,9 +560,9 @@ export function fetchAdminConversations(
   tenantId: string,
   skip: number = 0,
   limit: number = 20
-): Promise<{ items: AdminConversation[]; total: number }> {
-  return apiFetch<{ items: AdminConversation[]; total: number }>(
-    /admin/tenants//conversations?skip=\&limit=\
+): Promise<{ items: any[]; total: number }> {
+  return apiFetch<{ items: any[]; total: number }>(
+    `/admin/tenants/${tenantId}/conversations?skip=${skip}&limit=${limit}`
   )
 }
 
@@ -590,18 +570,18 @@ export function fetchAdminMessages(
   tenantId: string,
   conversationId: string,
   limit: number = 100
-): Promise<{ items: AdminMessage[]; total: number }> {
-  return apiFetch<{ items: AdminMessage[]; total: number }>(
-    /admin/tenants//conversations/\/messages?limit=\
+): Promise<{ items: any[]; total: number }> {
+  return apiFetch<{ items: any[]; total: number }>(
+    `/admin/tenants/${tenantId}/conversations/${conversationId}/messages?limit=${limit}`
   )
 }
 
 export function addAdminPaymentMethod(
   tenantId: string,
   data: { brand: string; last4: string; exp_month?: number; exp_year?: number }
-): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(
-    /admin/tenants//payment-method,
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(
+    `/admin/tenants/${tenantId}/payment-method`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -613,33 +593,19 @@ export function addAdminPaymentMethod(
 export function deleteAdminPaymentMethod(
   tenantId: string,
   paymentMethodId: string
-): Promise<AdminTenantDetail> {
-  return apiFetch<AdminTenantDetail>(
-    /admin/tenants//payment-methods/\,
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(
+    `/admin/tenants/${tenantId}/payment-methods/${paymentMethodId}`,
     { method: 'DELETE' }
-  )
-}
-
-export function createAdminCheckoutLink(
-  tenantId: string,
-  sendToWhatsapp: boolean = false
-): Promise<CheckoutLinkResult> {
-  return apiFetch<CheckoutLinkResult>(
-    /admin/tenants//checkout-link,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ send_to_whatsapp: sendToWhatsapp }),
-    }
   )
 }
 
 export function fetchAdminIdentities(
   tenantId: string,
   contactId: string
-): Promise<ChannelIdentity[]> {
-  return apiFetch<ChannelIdentity[]>(
-    /admin/tenants//contacts/\/identities
+): Promise<any[]> {
+  return apiFetch<any[]>(
+    `/admin/tenants/${tenantId}/contacts/${contactId}/identities`
   )
 }
 
@@ -647,9 +613,9 @@ export function addAdminIdentity(
   tenantId: string,
   contactId: string,
   data: { channel: string; external_id: string; kind: string }
-): Promise<ChannelIdentity> {
-  return apiFetch<ChannelIdentity>(
-    /admin/tenants//contacts/\/identities,
+): Promise<any> {
+  return apiFetch<any>(
+    `/admin/tenants/${tenantId}/contacts/${contactId}/identities`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -657,4 +623,3 @@ export function addAdminIdentity(
     }
   )
 }
-

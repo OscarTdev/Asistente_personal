@@ -281,6 +281,32 @@ export interface TenantModuleView {
   entitled: boolean
 }
 
+export interface TenantConversation {
+  id: string
+  contact_id: string
+  contact_name: string | null
+  contact_wa_id: string
+  status: string
+  messages_count: number
+  last_message_at: string | null
+}
+
+export interface TenantMessage {
+  id: string
+  direction: 'in' | 'out'
+  type: string
+  content: string | null
+  created_at: string
+}
+
+export interface TenantCheckoutResult {
+  preference_id: string | null
+  init_point: string
+  plan: string
+  price_cop: number
+  whatsapp_sent: boolean
+}
+
 export interface TenantPaymentMethod {
   id: string
   provider: string
@@ -369,7 +395,7 @@ export interface FollowUpRunResult {
   round2_sent: number
   errors: number
 }
-// -- Administración de la plataforma (solo is_platform_admin) -------------
+// -- Administraciï¿½n de la plataforma (solo is_platform_admin) -------------
 
 export interface AdminTenant {
   id: string
