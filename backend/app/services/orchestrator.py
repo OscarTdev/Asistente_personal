@@ -39,6 +39,7 @@ from app.models import (
     QuoteItem,
     Tenant,
     TenantModule,
+    Warranty,
 )
 from app.schemas.assistant import AssistantIntent
 from app.schemas.quotes import QuoteCreate
@@ -628,6 +629,119 @@ async def _handle_maintenance(
         f"🔧 Listo: «{description}» para {target.name or target.wa_id} "
         f"cada {freq} días. Próximo aviso: {due_str}. "
         f"Le escribiré a {target.name or 'tu cliente'} cuando toque."
+    )
+
+
+async def _handle_warranty(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Garantías: registrar qué se instaló y consultar las vigentes (spec §13).
+
+    «registra garantía para Juliana: breaker 30A, 1 año»
+    → el bot rastrea cuándo vence y puede avisar.
+    """
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    text_lower = (intent.message_text or "").lower()
+    query_words = (
+        "qué garantías", "que garantías", "mis garantías",
+        "garantías vigentes", "garantias vigentes",
+    )
+    if any(w in text_lower for w in query_words):
+        # Listar garantías activas
+        items = list(
+            (
+                await db.execute(
+                    select(Warranty)
+                    .where(
+                        Warranty.tenant_id == tenant.id,
+                        Warranty.status == "active",
+                    )
+                    .order_by(Warranty.expires_at.asc())
+                )
+            ).scalars().all()
+        )
+        if not items:
+            await tell_owner(
+                "No tienes garantías registradas. "
+                "Dime «registra garantía para [cliente]: [qué], [cuánto tiempo]»."
+            )
+        else:
+            now = datetime.now(UTC)
+            lines = ["🛡️ Tus garantías:\n"]
+            for w in items:
+                contact = (
+                    await db.execute(
+                        select(Contact).where(Contact.id == w.contact_id)
+                    )
+                ).scalar_one_or_none()
+                name = contact.name if contact else "—"
+                expires = w.expires_at.strftime("%d/%m/%Y")
+                expired = " ⚠️ VENCIDA" if w.expires_at < now else ""
+                lines.append(f"• {w.item[:50]} — {name} — vence: {expires}{expired}")
+            await tell_owner("\n".join(lines))
+        return
+
+    # Registrar: necesita cliente, item y duración
+    if not intent.contact_name:
+        await tell_owner("¿Para qué cliente registro la garantía?")
+        return
+
+    matches = await _resolve_contact_by_name(
+        db, tenant_id=tenant.id, name=intent.contact_name
+    )
+    if len(matches) != 1:
+        if matches:
+            await tell_owner("Encontré varios. ¿A cuál?")
+        else:
+            await tell_owner(f"No encontré a «{intent.contact_name}».")
+        return
+    target = matches[0]
+
+    item = (intent.description or "").strip()
+    if not item:
+        await tell_owner("¿Qué se instaló? (ej: breaker 30A Schneider)")
+        return
+
+    # Calcular fecha de vencimiento
+    from datetime import timedelta
+    now = datetime.now(UTC)
+    if intent.remind_at:
+        try:
+            expires_at = datetime.fromisoformat(intent.remind_at)
+        except ValueError:
+            expires_at = now + timedelta(days=365)
+    else:
+        # Parsear duración del texto
+        from app.services.maintenance import parse_frequency_days
+        days = parse_frequency_days(intent.message_text or item)
+        expires_at = now + timedelta(days=days or 365)
+
+    db.add(
+        Warranty(
+            tenant_id=tenant.id,
+            contact_id=target.id,
+            item=item[:500],
+            installed_at=now,
+            expires_at=expires_at,
+        )
+    )
+    await db.commit()
+
+    expires_str = expires_at.strftime("%d/%m/%Y")
+    await tell_owner(
+        f"🛡️ Garantía registrada: «{item}» para "
+        f"{target.name or target.wa_id} hasta el {expires_str}."
     )
 
 
@@ -1652,6 +1766,13 @@ async def handle_incoming(
 
         if intent.intention == "collection":
             await _handle_collection(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "warranty":
+            await _handle_warranty(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
             )

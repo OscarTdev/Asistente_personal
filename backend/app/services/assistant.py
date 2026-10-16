@@ -43,6 +43,10 @@ INTENCIONES:
   Ejemplos: "programa mantenimiento de aire acondicionado para Juliana cada 6 meses", "qué mantenimientos tengo", "agenda revisión del tablero para Pedro en 3 meses".
   Para programar: "contact_name" (cliente), "message_text" (qué mantener), "remind_at" (fecha ISO del próximo).
   Para consultar: sin campos adicionales.
+- "warranty": el dueño REGISTRA o CONSULTA una GARANTÍA (qué instaló y hasta cuándo cubre).
+  Ejemplos: "registra garantía para Juliana: breaker 30A, 1 año", "qué garantías tengo", "garantías vigentes de Pedro".
+  Para registrar: "contact_name" (cliente), "description" (qué se instaló), "amount" NO aplica, usa "remind_at" como fecha de vencimiento ISO.
+  Para consultar: sin campos adicionales.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

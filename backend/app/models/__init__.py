@@ -30,6 +30,7 @@ from .tenant_modules import TenantModule
 from .tenant_service_override import TenantServiceOverride
 from .tenants import Tenant
 from .users import User
+from .warranty import Warranty
 
 __all__ = [
     "Base",
@@ -64,4 +65,5 @@ __all__ = [
     "Note",
     "Reminder",
     "Maintenance",
+    "Warranty",
 ]

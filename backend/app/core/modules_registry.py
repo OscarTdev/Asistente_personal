@@ -164,6 +164,7 @@ DEV_STATUS: dict[str, str] = {
     "collections": "active",  # cobro de cartera con link de MercadoPago
     "visit_report": "active",  # informe de visita técnica IV-0001
     "maintenance": "active",   # mantenimiento preventivo recurrente
+    "warranties": "active",    # garantías de lo instalado
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar")
