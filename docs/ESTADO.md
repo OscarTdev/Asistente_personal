@@ -1,6 +1,6 @@
 # Asistente Personal (Aura) — Estado Real del Proyecto
 
-## 15 servicios construidos y funcionando
+## 16 servicios construidos y funcionando
 
 | # | Servicio | Comando por chat | Estado |
 |---|---|---|---|
@@ -19,6 +19,7 @@
 | 13 | **Inventario** | "Tengo 20 metros de cable" / "Qué inventario tengo" | ✅ |
 | 14 | **Seguimiento de obra** | "Abre obra para Juliana" / "Registro: se instaló..." | ✅ |
 | 15 | **Rentabilidad** | "Rentabilidad del trabajo de Juliana" | ✅ |
+| 16 | **Correo y calendario (Google)** | "Resumime el correo" / "Qué tengo hoy" / "Pasa mis gastos a una hoja" | ✅ |
 
 ## Infraestructura
 
@@ -33,7 +34,7 @@
 | **NVIDIA NIM** | LLM compatible OpenAI (extracción, router de intenciones) |
 | **Panel React** | Dashboard, catálogo, cotizaciones, CRM, admin |
 
-## 15 intenciones del router
+## 19 intenciones del router
 
 ```
 send_message → Enviar mensaje a un contacto
@@ -50,6 +51,10 @@ expense → Registrar gastos
 inventory → Inventario de materiales
 site_log → Bitácora de obra
 profitability → Rentabilidad de un trabajo
+google_email → Resumir el correo / escribir a un contacto (con confirmación)
+google_calendar → Consultar la agenda / agendar un evento
+google_sheets → Exportar los gastos a una hoja de cálculo
+google_docs → Generar el informe del mes en un documento
 chat → Conversación general
 ```
 
@@ -71,26 +76,28 @@ chat → Conversación general
 - Docker solo en 127.0.0.1, sin claves por defecto
 - PDFs con escape XML (anti inyección de marcado)
 
-## Pendiente (Google + infraestructura)
+## Pendiente (infraestructura)
 
 | Pendiente | Descripción |
 |---|---|
-| **Correo y calendario** | Gmail, Calendar, Sheets, Docs, Forms, Drive (OAuth) |
+| **Credenciales Google** | Crear el OAuth client en Google Cloud Console y poner GOOGLE_CLIENT_ID/SECRET en .env (guía: docs/GOOGLE.md) |
+| **Google Maps** | Requiere API key propia (no OAuth) — pendiente |
 | **Resumen diario** | "Qué tengo hoy" al despertar (ya construido en backend por otra sesión) |
 | **TTS** | Responder en voz (Edge TTS ya instalado, falta activar respuesta) |
 | **Cola ARQ** | Migrar workers a ARQ para producción (el debounce ya funciona en asyncio) |
 | **CI** | GitHub Actions con Postgres + Redis, lint, types, tests |
-| **Logo en PDF** | Pillow + almacenamiento de archivos |
 
-## Próxima gran fase: Google
+## Fase Google: construida ✅ (commits 392182a y siguientes)
 
-El módulo de "correo y calendario" se expande a **todas las tecnologías Google**:
-- **Gmail**: resumir correo, detectar clientes, responder
-- **Calendar**: crear eventos, proponer horarios, sincronizar
-- **Sheets**: leer/escribir datos de clientes, catálogo, cotizaciones
-- **Docs**: generar informes y documentos
-- **Forms**: encuestas a clientes
-- **Drive**: guardar archivos de obras
-- **Maps**: ubicaciones de trabajos
+El módulo «Correo y calendario (Google)» ya está activo con las tecnologías:
+- **Gmail**: resumir la bandeja + escribir correos con confirmación del dueño
+- **Calendar**: consultar la agenda y agendar eventos (hora Colombia)
+- **Sheets**: exportar los gastos del mes a una hoja nueva con total
+- **Docs**: informe del mes (gastos por categoría + cotizaciones)
+- **Forms**: encuesta de satisfacción lista para compartir
+- **Drive**: archivos recientes de la cuenta conectada
 
-Requiere OAuth 2.0 con Google (alcances mínimos por servicio, tokens cifrados).
+Cada dueño conecta SU cuenta desde el panel (Mi negocio → Conectar Google),
+con state JWT anti-CSRF y aislamiento total por tenant (24 pruebas en
+tests/test_google.py). Falta solo crear las credenciales en Google Cloud
+Console (docs/GOOGLE.md §1) y publicar la app cuando haya usuarios reales.

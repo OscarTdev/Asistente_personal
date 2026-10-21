@@ -113,7 +113,8 @@ def build_authorization_url(state: str) -> str:
         "prompt": "consent",        # fuerza el refresh aunque ya existiera
         "state": state,
     }
-    return f"{GOOGLE_AUTH_URL}?{httpx.QueryParams(params).encode()}"
+    # str(QueryParams) → "a=b&c=d" correctamente codificado
+    return f"{GOOGLE_AUTH_URL}?{httpx.QueryParams(params)}"
 
 
 async def exchange_code(code: str) -> dict:

@@ -212,6 +212,27 @@ prospecto y arranca la conversación de registro.
 | GET | `/api/v1/modules` | Lista de módulos con estado por tenant | JWT |
 | PUT | `/api/v1/modules/{key}` | Activar/desactivar módulo | JWT (admin) |
 
+### Google Workspace (conexión del dueño — guía: `docs/GOOGLE.md`)
+
+| Método | Ruta | Descripción | Auth |
+|---|---|---|---|
+| GET | `/api/v1/google/status` | ¿Conectado? correo y scopes del tenant | JWT |
+| POST | `/api/v1/google/authorize` | URL de consentimiento (state JWT 10 min) | JWT (admin) |
+| POST | `/api/v1/google/callback` | Canjea el code y guarda los tokens | JWT (admin) |
+| DELETE | `/api/v1/google/disconnect` | Revoca en Google y borra la conexión | JWT (admin) |
+| GET | `/api/v1/google/gmail/summary` | Correos recientes de la bandeja | JWT (admin) |
+| GET | `/api/v1/google/calendar/upcoming` | Agenda de los próximos días | JWT (admin) |
+| POST | `/api/v1/google/calendar/events` | Crear evento (naive = hora Colombia) | JWT (admin) |
+| POST | `/api/v1/google/sheets/export-expenses` | Gastos del mes → hoja de cálculo | JWT (admin) |
+| POST | `/api/v1/google/docs/month-report` | Informe del mes → Google Doc | JWT (admin) |
+| GET | `/api/v1/google/drive/files` | Archivos recientes del Drive | JWT (admin) |
+| POST | `/api/v1/google/forms/satisfaction-survey` | Encuesta de satisfacción (Forms) | JWT (admin) |
+
+Errores: `409` = sin conexión o sesión Google expirada (reconectar en el
+panel), `422` = plataforma sin credenciales, `502` = Google respondió
+con error. Una cuenta Google por tenant (`google_connections`,
+UNIQUE `tenant_id`); el correo a un tercero siempre pide confirmación.
+
 ### Admin de plataforma (solo `is_platform_admin`)
 
 | Método | Ruta | Descripción | Auth |
