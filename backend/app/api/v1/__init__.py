@@ -7,6 +7,7 @@ from .catalog import router as catalog_router
 from .contacts import router as contacts_router
 from .dashboard import router as dashboard_router
 from .followup import router as followup_router
+from .google import router as google_router
 from .modules import router as modules_router
 from .quotes import router as quotes_router
 from .reminders import router as reminders_router
@@ -24,5 +25,6 @@ api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(quotes_router, prefix="/quotes", tags=["quotes"])
 api_router.include_router(followup_router, prefix="/followup", tags=["followup"])
 api_router.include_router(reminders_router, prefix="/reminders", tags=["reminders"])
+api_router.include_router(google_router, prefix="/google", tags=["google"])
 api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"])
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])

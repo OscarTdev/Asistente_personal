@@ -11,6 +11,14 @@ import {
   useDeleteBrandingLogo,
   useUploadBrandingLogo,
 } from '../hooks/useBranding'
+import {
+  useGoogleAuthorize,
+  useGoogleDisconnect,
+  useGoogleStatus,
+} from '../hooks/useGoogle'
+import { fetchGmailSummary } from '../lib/api'
+import { GmailSummaryItem } from '../types'
+import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 
 function LogoCard() {
@@ -113,6 +121,134 @@ function LogoCard() {
   )
 }
 
+function GoogleCard() {
+  const { data, isLoading, error } = useGoogleStatus()
+  const authorize = useGoogleAuthorize()
+  const disconnect = useGoogleDisconnect()
+  const [note, setNote] = useState<string | null>(null)
+  const [testOpen, setTestOpen] = useState(false)
+
+  // Prueba de la conexión: los 3 correos más recientes (solo lectura)
+  const gmailTest = useQuery<GmailSummaryItem[], Error>({
+    queryKey: ['google', 'gmail-test'],
+    queryFn: () => fetchGmailSummary(3),
+    enabled: testOpen,
+  })
+
+  const handleConnect = () => {
+    setNote(null)
+    authorize.mutate(undefined, {
+      onSuccess: (result) => {
+        window.location.href = result.authorization_url
+      },
+      onError: (err) => setNote(`Error: ${err.message}`),
+    })
+  }
+
+  const handleDisconnect = () => {
+    if (!window.confirm('¿Desconectar tu cuenta de Google? El asistente dejará de leer tu correo y tu agenda.')) {
+      return
+    }
+    setTestOpen(false)
+    setNote(null)
+    disconnect.mutate(undefined, {
+      onSuccess: () => setNote('Cuenta desconectada ✓'),
+      onError: (err) => setNote(`Error: ${err.message}`),
+    })
+  }
+
+  return (
+    <Card className="p-5">
+      <h2 className="mb-1 text-sm font-semibold text-ink">Cuenta de Google</h2>
+      <p className="mb-4 text-xs text-linen-600">
+        Conecta tu Gmail, Calendar, Sheets y Docs para que tu asistente pueda
+        resumirte el correo, agendar visitas y exportar tus gastos. Nunca
+        envía nada sin tu confirmación.
+      </p>
+      {error && (
+        <div className="mb-3">
+          <ErrorSlip message={error.message} />
+        </div>
+      )}
+      {isLoading ? (
+        <div className="skel h-10 w-full" />
+      ) : data?.connected ? (
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="inline-flex h-2 w-2 rounded-full bg-ok" />
+            <p className="text-sm font-medium text-ink">
+              Conectada: {data.google_email}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setTestOpen((v) => !v)}
+            >
+              {testOpen ? 'Ocultar' : 'Probar Gmail'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleDisconnect}
+              disabled={disconnect.isLoading}
+            >
+              {disconnect.isLoading ? 'Desconectando…' : 'Desconectar'}
+            </Button>
+          </div>
+          {testOpen && (
+            <div className="mt-3">
+              {gmailTest.isLoading ? (
+                <div className="skel h-16 w-full" />
+              ) : gmailTest.error ? (
+                <ErrorSlip message={gmailTest.error.message} />
+              ) : gmailTest.data && gmailTest.data.length > 0 ? (
+                <ul className="space-y-2">
+                  {gmailTest.data.map((m, i) => (
+                    <li key={i} className="rounded border border-linen-200 p-2">
+                      <p className="text-xs font-medium text-ink">
+                        {m.subject || '(sin asunto)'}
+                      </p>
+                      <p className="text-xs text-linen-600">{m.sender}</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-linen-600">
+                  Bandeja vacía: conexión funcionando ✓
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      ) : data?.configured ? (
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleConnect}
+          disabled={authorize.isLoading}
+        >
+          {authorize.isLoading ? 'Abriendo Google…' : 'Conectar Google'}
+        </Button>
+      ) : (
+        <p className="rounded border border-dashed border-linen-300 p-3 text-xs text-linen-600">
+          El administrador de la plataforma aún no ha configurado las
+          credenciales de Google (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
+          Cuando lo haga, aquí podrás conectar tu cuenta.
+        </p>
+      )}
+      {note && (
+        <p className={`mt-3 text-xs ${note.startsWith('Error') ? 'text-lacre' : 'text-ok'}`}>
+          {note}
+        </p>
+      )}
+    </Card>
+  )
+}
+
 export default function NegocioPage() {
   const { user } = useAuth()
   const botName = user?.bot_name ?? 'Aura'
@@ -127,7 +263,10 @@ export default function NegocioPage() {
         </p>
       </div>
 
-      <LogoCard />
+      <div className="flex flex-col gap-4">
+        <LogoCard />
+        <GoogleCard />
+      </div>
 
       <p className="mt-4 text-xs text-linen-600">
         Próximamente aquí: pie de página de los PDFs, color del encabezado y

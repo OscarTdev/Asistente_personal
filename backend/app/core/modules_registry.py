@@ -137,10 +137,11 @@ AVAILABLE_MODULES: list[ModuleDefinition] = [
     # ── General ──────────────────────────────────────────────────────────
     {
         "key": "email_calendar",
-        "name": "Correo y calendario",
+        "name": "Correo y calendario (Google)",
         "description": (
-            "Resumir el correo, proponer horarios y crear eventos en Google Calendar. "
-            "Siempre con confirmación antes de enviar."
+            "Conecta tu cuenta de Google desde el panel: resumir el correo, "
+            "agendar en Calendar, exportar gastos a Sheets y generar informes "
+            "en Docs. Siempre con confirmación antes de enviar."
         ),
         "category": "general",
     },
@@ -169,6 +170,7 @@ DEV_STATUS: dict[str, str] = {
     "inventory": "active",      # materiales e inventario del técnico
     "site_log": "active",       # bitácora de obra con avance diario
     "profitability": "active",  # costo real vs lo cotizado
+    "email_calendar": "active", # Google Workspace: Gmail, Calendar, Sheets, Docs, Drive, Forms
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar")

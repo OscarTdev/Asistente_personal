@@ -15,6 +15,11 @@
   ExtractResponse,
   FollowUpPendingPage,
   FollowUpRunResult,
+  GmailSummaryItem,
+  CalendarEventItem,
+  GoogleCallbackResult,
+  GoogleExportResult,
+  GoogleStatus,
   LoginResponse,
   Module,
   PlanEntitlementItem,
@@ -416,6 +421,52 @@ export function uploadBrandingLogo(
 
 export function deleteBrandingLogo(): Promise<void> {
   return apiFetch<void>('/branding/logo', { method: 'DELETE' })
+}
+
+// ── Google Workspace: conexión del dueño con SU cuenta ──────────────────────
+
+export function fetchGoogleStatus(): Promise<GoogleStatus> {
+  return apiFetch<GoogleStatus>('/google/status')
+}
+
+export function authorizeGoogle(): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/google/authorize', {
+    method: 'POST',
+  })
+}
+
+export function googleCallback(code: string, state: string): Promise<GoogleCallbackResult> {
+  return apiFetch<GoogleCallbackResult>('/google/callback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, state }),
+  })
+}
+
+export function disconnectGoogle(): Promise<{ disconnected: boolean }> {
+  return apiFetch<{ disconnected: boolean }>('/google/disconnect', {
+    method: 'DELETE',
+  })
+}
+
+export function fetchGmailSummary(maxResults = 5): Promise<GmailSummaryItem[]> {
+  return apiFetch<GmailSummaryItem[]>(`/google/gmail/summary?max_results=${maxResults}`)
+}
+
+export function fetchGoogleCalendarUpcoming(days = 7): Promise<CalendarEventItem[]> {
+  return apiFetch<CalendarEventItem[]>(`/google/calendar/upcoming?days=${days}`)
+}
+
+export function exportExpensesSheet(): Promise<GoogleExportResult> {
+  return apiFetch<GoogleExportResult>('/google/sheets/export-expenses', {
+    method: 'POST',
+  })
+}
+
+export function createMonthReportDoc(): Promise<GoogleExportResult> {
+  return apiFetch<GoogleExportResult>('/google/docs/month-report', {
+    method: 'POST',
+  })
 }
 
 // â”€â”€ Mis clientes (negocios con el asistente) â€” panel Admin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

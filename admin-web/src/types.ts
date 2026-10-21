@@ -247,6 +247,40 @@ export interface Branding {
   logo_data_url: string | null
 }
 
+// ── Google Workspace: el dueño conecta SU cuenta ────────────────────────────
+
+export interface GoogleStatus {
+  configured: boolean
+  connected: boolean
+  google_email: string | null
+  scopes: string[]
+}
+
+export interface GoogleCallbackResult {
+  connected: boolean
+  google_email: string
+}
+
+export interface GmailSummaryItem {
+  sender: string
+  subject: string
+  date: string
+  snippet: string
+}
+
+export interface CalendarEventItem {
+  summary: string
+  start: string
+  end: string
+  description: string | null
+}
+
+export interface GoogleExportResult {
+  url: string
+  title: string
+  rows: number | null
+}
+
 // ── Mis clientes (negocios con el asistente) — panel Admin ───────────────────
 
 export interface TenantSummary {

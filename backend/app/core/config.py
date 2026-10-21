@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     tts_model: str = "tts-1"
     tts_voice: str = "es-CO-SalomeNeural"
 
+    # Google Workspace (OAuth 2.0): UN client de la plataforma y cada dueño
+    # conecta SU cuenta desde el panel. Vacíos → la conexión no se ofrece
+    # y el bot lo dice con claridad (nunca falla en silencio).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # URI de retorno registrada en Google Cloud Console
+    # (vacío → {panel_base_url}/google/callback)
+    google_redirect_uri: str = ""
+
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )

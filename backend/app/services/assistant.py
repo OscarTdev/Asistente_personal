@@ -62,6 +62,16 @@ INTENCIONES:
   Para cerrar: "cierra la obra de Juliana" → "contact_name" = cliente.
 - "profitability": el dueño pregunta cuánto ganó en un trabajo.
   "rentabilidad del trabajo de Juliana", "cuánto gané con Pedro" → "contact_name" = cliente.
+- "google_email": el dueño pide revisar SU correo de Gmail o escribirle un correo a alguien.
+  Para resumir: "resumime el correo", "tengo correos nuevos", "qué hay en mi correo" → sin campos.
+  Para escribir: "escríbele un correo a Juliana diciendo que llego a las 3" → "contact_name" = destinatario, "message_text" = cuerpo del correo.
+- "google_calendar": el dueño consulta SU agenda de Google Calendar o agenda un evento.
+  Para consultar: "qué tengo hoy", "qué tengo mañana", "mi agenda de la semana" → sin campos.
+  Para agendar: "agenda visita de Juliana el jueves a las 3" → "message_text" = título del evento, "remind_at" = fecha/hora ISO del inicio, "contact_name" si aplica.
+- "google_sheets": el dueño quiere pasar SUS datos a una hoja de cálculo de Google Sheets.
+  "pasa mis gastos a una hoja", "exporta mis gastos a Excel", "pásame los gastos del mes a Sheets" → sin campos.
+- "google_docs": el dueño pide generar un informe o documento en Google Docs.
+  "genera un informe del mes", "hazme un documento con el resumen del mes" → sin campos.
 - "chat": todo lo demás: preguntas, charla, pedidos que aún no existen como acción.
 
 Responde SOLO un JSON válido, sin texto adicional:

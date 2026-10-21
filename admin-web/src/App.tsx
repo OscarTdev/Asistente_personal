@@ -15,6 +15,7 @@ import PagosPlanesPage from './pages/PagosPlanesPage'
 import PlataformaPage from './pages/PlataformaPage'
 import RemindersPage from './pages/RemindersPage'
 import NegocioPage from './pages/NegocioPage'
+import GoogleCallbackPage from './pages/GoogleCallbackPage'
 import AdminPage from './pages/AdminPage'
 
 // /clientes por rol (adendo §3.2): superadmin ve sus negocios; dueño → su CRM
@@ -53,6 +54,8 @@ function App() {
         <Route path="/servicios/reminders" element={<RemindersPage />} />
         <Route path="/servicios/crm" element={<ClientesPage />} />
         <Route path="/negocio" element={<NegocioPage />} />
+        {/* Google OAuth: Google vuelve aquí con ?code=...&state=... */}
+        <Route path="/google/callback" element={<GoogleCallbackPage />} />
         {/* Superadmin: sus secciones de plataforma (adendo §3.1) */}
         <Route path="/clientes" element={<ClientesPorRol />} />
         <Route path="/pagos" element={<PagosPlanesPage />} />
