@@ -974,9 +974,19 @@ _DIAS_CORTOS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
 
 
 def _fmt_event_time(raw: str) -> str:
-    """RFC3339 de Google → «jue 20/10 03:00 PM» en hora Colombia (UTC-5)."""
+    """RFC3339 de Google → «jue 20/10 03:00 PM» en hora Colombia (UTC-5).
+
+    Los eventos de todo el día llegan como "2026-10-20" (sin hora).
+    """
     from datetime import timedelta
     from datetime import timezone as tz
+
+    if "T" not in raw:
+        try:
+            day = datetime.strptime(raw[:10], "%Y-%m-%d")
+        except ValueError:
+            return raw
+        return f"{_DIAS_CORTOS[day.weekday()]} {day.strftime('%d/%m')} (todo el día)"
 
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
@@ -1010,8 +1020,18 @@ async def _handle_google_email(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
-    # Escribirle un correo a un contacto → borrador + confirmación
+    # Escribirle un correo a un contacto → borrador + confirmación.
+    # Conexión primero: sin cuenta Google no ofrecemos el borrador (el
+    # dueño no debería confirmar algo que va a fallar al enviar).
     if intent.contact_name and intent.message_text:
+        status = await google_actions.connection_status(db, tenant_id=tenant.id)
+        if not status["connected"]:
+            await tell_owner(
+                "🔗 Aún no has conectado tu cuenta de Google. Hazlo desde "
+                "el panel (Mi negocio → Conectar Google) y te ayudo a "
+                "escribir correos."
+            )
+            return
         matches = await _resolve_contact_by_name(
             db, tenant_id=tenant.id, name=intent.contact_name
         )
@@ -1770,8 +1790,11 @@ async def _handle_confirmation(
             return True
 
         if pending.action_type == "send_email":
-            # El dueño confirmó el borrador: enviar desde SU cuenta Google
+            # El dueño confirmó el borrador: enviar desde SU cuenta Google.
+            # Si falla, la acción VUELVE a quedar pendiente (el borrador no
+            # se pierde): reconecta y dice «sí» de nuevo para reintentar.
             from app.services import google_actions
+            from app.services.google_oauth import GoogleAuthError, GoogleNotConnected
 
             payload = pending.payload
             try:
@@ -1782,21 +1805,50 @@ async def _handle_confirmation(
                     subject=payload["subject"],
                     body=payload["body"],
                 )
+            except GoogleNotConnected:
+                pending.status = "pending"
+                await db.commit()
                 await _send_out_message(
                     db, tenant_id=tenant.id, conversation=conversation,
                     channel=channel, wa_id=wa_id,
-                    text=f"✅ Correo enviado a {payload['to']}.",
+                    text=(
+                        "🔗 Tu cuenta de Google no está conectada. "
+                        "Conéctala desde el panel (Mi negocio) y respóndeme "
+                        "«sí» para reintentar el envío."
+                    ),
                 )
+                return True
+            except GoogleAuthError:
+                pending.status = "pending"
+                await db.commit()
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id,
+                    text=(
+                        "⚠️ Tu conexión con Google expiró. Reconéctala desde "
+                        "el panel (Mi negocio) y respóndeme «sí» para "
+                        "reintentar el envío."
+                    ),
+                )
+                return True
             except Exception:
+                pending.status = "pending"
+                await db.commit()
                 logger.exception("El envío de correo desde Google falló")
                 await _send_out_message(
                     db, tenant_id=tenant.id, conversation=conversation,
                     channel=channel, wa_id=wa_id,
                     text=(
-                        "⚠️ No pude enviar el correo. Verifica tu conexión "
-                        "con Google en el panel (Mi negocio)."
+                        "⚠️ No pude enviar el correo ahora. "
+                        "Dime «sí» para reintentarlo."
                     ),
                 )
+                return True
+            await _send_out_message(
+                db, tenant_id=tenant.id, conversation=conversation,
+                channel=channel, wa_id=wa_id,
+                text=f"✅ Correo enviado a {payload['to']}.",
+            )
             return True
 
     # Ni sí ni no: la acción sigue pendiente

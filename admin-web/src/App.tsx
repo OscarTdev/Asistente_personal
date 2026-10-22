@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './auth/AuthContext'
 import AppLayout from './components/layout/AppLayout'
 import LoginPage from './pages/LoginPage'
@@ -18,13 +18,21 @@ import NegocioPage from './pages/NegocioPage'
 import GoogleCallbackPage from './pages/GoogleCallbackPage'
 import AdminPage from './pages/AdminPage'
 
-// /clientes por rol (adendo §3.2): superadmin ve sus negocios; dueño → su CRM
+// /clientes por rol: superadmin ve sus negocios; dueño → su CRM
 function ClientesPorRol() {
   const { user } = useAuth()
   if (user?.is_platform_admin) {
     return <PlatformClientesPage />
   }
-  return <Navigate to="/servicios/crm" replace />
+  return <ClientesPage />
+}
+
+// Rutas viejas del cotizador → nuevas, conservando el sub-path
+// (/servicios/quoter/cotizaciones/123 → /cotizador/cotizaciones/123)
+function OldQuoterRedirect() {
+  const { pathname } = useLocation()
+  const rest = pathname.replace('/servicios/quoter', '')
+  return <Navigate to={`/cotizador${rest}`} replace />
 }
 
 function App() {
@@ -42,33 +50,44 @@ function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
+        {/* Panel principal */}
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/servicios" element={<ServiciosPage />} />
-        <Route path="/servicios/quoter" element={<QuoterWorkspace />}>
+
+        {/* Cotizador: ahora accesible desde /cotizador */}
+        <Route path="/cotizador" element={<QuoterWorkspace />}>
           <Route index element={<Navigate to="catalogo" replace />} />
           <Route path="catalogo" element={<CatalogPage />} />
           <Route path="cotizaciones" element={<QuotesPage />} />
           <Route path="cotizaciones/:id" element={<QuoteDetailPage />} />
           <Route path="seguimiento" element={<FollowUpPage />} />
         </Route>
-        <Route path="/servicios/reminders" element={<RemindersPage />} />
-        <Route path="/servicios/crm" element={<ClientesPage />} />
-        <Route path="/negocio" element={<NegocioPage />} />
-        {/* Google OAuth: Google vuelve aquí con ?code=...&state=... */}
-        <Route path="/google/callback" element={<GoogleCallbackPage />} />
-        {/* Superadmin: sus secciones de plataforma (adendo §3.1) */}
+
+        {/* Clientes / CRM (rol dependiente) */}
         <Route path="/clientes" element={<ClientesPorRol />} />
+
+        {/* Recordatorios (sidebar: /agenda) */}
+        <Route path="/agenda" element={<RemindersPage />} />
+
+        {/* Mi Negocio */}
+        <Route path="/negocio" element={<NegocioPage />} />
+
+        {/* Google OAuth callback */}
+        <Route path="/google/callback" element={<GoogleCallbackPage />} />
+
+        {/* ── Superadmin ──────────────────────────────────────────────── */}
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/pagos" element={<PagosPlanesPage />} />
         <Route path="/plataforma" element={<PlataformaPage />} />
-        {/* Admin completo de la plataforma: planes, chat, pagos, servicios */}
-        <Route path="/admin" element={<AdminPage />} />
-        {/* Rutas antiguas → nuevas, por memoria muscular */}
-        <Route path="/agenda" element={<Navigate to="/servicios/reminders" replace />} />
-        <Route path="/conexion" element={<Navigate to="/plataforma" replace />} />
-        {/* Rutas antiguas → nuevas, por memoria muscular */}
+        <Route path="/servicios" element={<ServiciosPage />} />
+
+        {/* ── Redirecciones de compatibilidad (rutas antiguas → nuevas) ── */}
+        <Route path="/servicios/quoter/*" element={<OldQuoterRedirect />} />
+        <Route path="/servicios/reminders" element={<Navigate to="/agenda" replace />} />
+        <Route path="/servicios/crm" element={<Navigate to="/clientes" replace />} />
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
-        <Route path="/catalog" element={<Navigate to="/servicios/quoter/catalogo" replace />} />
-        <Route path="/quotes" element={<Navigate to="/servicios/quoter/cotizaciones" replace />} />
+        <Route path="/catalog" element={<Navigate to="/cotizador/catalogo" replace />} />
+        <Route path="/quotes" element={<Navigate to="/cotizador/cotizaciones" replace />} />
+        <Route path="/conexion" element={<Navigate to="/plataforma" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

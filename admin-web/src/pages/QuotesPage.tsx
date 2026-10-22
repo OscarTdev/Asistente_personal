@@ -341,7 +341,7 @@ export default function QuotesPage() {
     createQuote.mutate(payload, {
       onSuccess: (quote) => {
         setCreating(false)
-        navigate(`/servicios/quoter/cotizaciones/${quote.id}`)
+        navigate(`/cotizador/cotizaciones/${quote.id}`)
       },
     })
   }

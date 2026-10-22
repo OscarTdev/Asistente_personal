@@ -10,6 +10,7 @@ import {
   fetchContactNotes,
   fetchContactQuotes,
   fetchContacts,
+  fetchContactTags,
   updateContact,
 } from '../lib/api'
 import {
@@ -47,7 +48,7 @@ export function useContacts(params: ContactsParams) {
 export function useContactTags() {
   return useQuery<string[], Error>({
     queryKey: ['contact-tags'],
-    queryFn: () => import('../lib/api').then((m) => m.fetchContactTags()),
+    queryFn: () => fetchContactTags(),
   })
 }
 

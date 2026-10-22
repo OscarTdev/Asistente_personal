@@ -4,10 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   authorizeGoogle,
   disconnectGoogle,
+  fetchGmailSummary,
   fetchGoogleStatus,
   googleCallback,
 } from '../lib/api'
-import { GoogleCallbackResult, GoogleStatus } from '../types'
+import { GmailSummaryItem, GoogleCallbackResult, GoogleStatus } from '../types'
 
 export function useGoogleStatus() {
   return useQuery<GoogleStatus, Error>({
@@ -39,5 +40,14 @@ export function useGoogleDisconnect() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['google'] })
     },
+  })
+}
+
+// Prueba de la conexión desde Mi negocio: los 3 correos más recientes
+export function useGmailTest(enabled: boolean) {
+  return useQuery<GmailSummaryItem[], Error>({
+    queryKey: ['google', 'gmail-test'],
+    queryFn: () => fetchGmailSummary(3),
+    enabled,
   })
 }

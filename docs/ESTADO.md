@@ -1,6 +1,6 @@
 # Asistente Personal (Aura) — Estado Real del Proyecto
 
-## 16 servicios construidos y funcionando
+## 16 capacidades construidas y funcionando (14 módulos en el registro)
 
 | # | Servicio | Comando por chat | Estado |
 |---|---|---|---|
@@ -62,7 +62,7 @@ chat → Conversación general
 
 - **Un número de WhatsApp compartido** para todos los clientes
 - **Onboarding automático**: desconocido escribe → registro completo → tenant en trial
-- **Planes**: trial (gratis) → freemium (método de pago) → premium ($29.000/mes)
+- **Planes**: trial (gratis) → freemium (método de pago) → premium ($19.900/mes)
 - **Entitlements**: nadie enciende un servicio fuera de su plan
 - **Confirmación del dueño**: nada se envía a un tercero sin "sí"
 - **MercadoPago**: link de pago, webhook idempotente, vencimiento automático

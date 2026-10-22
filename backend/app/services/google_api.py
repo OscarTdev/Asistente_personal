@@ -72,7 +72,7 @@ def _header(message: dict, name: str) -> str:
 
 
 async def gmail_recent_messages(
-    access_token: str, *, query: str = "is:inbox", max_results: int = 5
+    access_token: str, *, query: str = "in:inbox", max_results: int = 5
 ) -> list[dict]:
     """Los N mensajes más recientes que cumplen el query."""
     listing = await _request(
@@ -178,12 +178,16 @@ async def sheets_create_spreadsheet(access_token: str, *, title: str) -> dict:
 async def sheets_write_values(
     access_token: str, *, spreadsheet_id: str, values: list[list[str]]
 ) -> None:
-    """Escribe un bloque 2D empezando en A1 (primera fila = encabezados)."""
+    """Escribe un bloque 2D empezando en A1 (primera fila = encabezados).
+
+    RAW y no USER_ENTERED: el contenido dictado por el dueño es DATOS,
+    nunca fórmulas que Google deba evaluar (regla anti inyección).
+    """
     await _request(
         "PUT",
         f"{SHEETS_BASE}/{spreadsheet_id}/values/A1",
         access_token,
-        params={"valueInputOption": "USER_ENTERED"},
+        params={"valueInputOption": "RAW"},
         json={"values": values},
     )
 
@@ -203,7 +207,8 @@ def _docs_url(doc_id: str) -> str:
 
 
 async def docs_insert_text(access_token: str, *, document_id: str, text: str) -> None:
-    """Inserta texto al final del documento (una sola petición)."""
+    """Inserta el texto al COMIENZO del documento (index 1: en un doc
+    recién creado el título es metadata y el body empieza vacío)."""
     await _request(
         "POST",
         f"{DOCS_BASE}/{document_id}:batchUpdate",
@@ -225,7 +230,8 @@ async def docs_insert_text(access_token: str, *, document_id: str, text: str) ->
 
 
 async def drive_list_files(access_token: str, *, max_results: int = 10) -> list[dict]:
-    """Archivos recientes del Drive (app + del usuario con drive.file)."""
+    """Archivos del Drive creados/abiertos por la app (scope drive.file
+    — así funciona: NO lista todo el Drive del dueño)."""
     data = await _request(
         "GET",
         DRIVE_BASE,

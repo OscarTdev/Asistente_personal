@@ -6,7 +6,7 @@ agrupado por categoría con el total.
 """
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -94,14 +94,20 @@ async def monthly_summary(
     tenant_id: UUID,
     month: datetime | None = None,
 ) -> dict:
-    """Resumen del mes: total y desglose por categoría."""
+    """Resumen del mes: total y desglose por categoría.
+
+    "Este mes" se define en hora Colombia (UTC-5): sin esto, un gasto
+    del 31 a las 8pm Bogotá caería en el mes siguiente (01:00 UTC).
+    """
     if month is None:
-        month = datetime.now(UTC)
-    start = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
+        month = datetime.now(UTC) - timedelta(hours=5)  # hora Colombia
+    start_col = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start_col.month == 12:
+        end_col = start_col.replace(year=start_col.year + 1, month=1)
     else:
-        end = start.replace(month=start.month + 1)
+        end_col = start_col.replace(month=start_col.month + 1)
+    start = start_col + timedelta(hours=5)  # local → UTC
+    end = end_col + timedelta(hours=5)
 
     rows = (
         await db.execute(

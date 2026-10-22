@@ -115,8 +115,19 @@ async def google_callback(
             detail="Este enlace de conexión pertenece a otra cuenta.",
         )
 
-    tokens = await google_oauth.exchange_code(body.code)
-    google_email = await google_oauth.fetch_user_email(tokens["access_token"])
+    # Google puede rechazar el code (expira ~10 min, ya usado, redirect
+    # mismatch): 409 accionable, nunca un 500 sin explicación.
+    try:
+        tokens = await google_oauth.exchange_code(body.code)
+        google_email = await google_oauth.fetch_user_email(tokens["access_token"])
+    except google_oauth.GoogleAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except google_api.GoogleApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
     if not google_email:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -131,10 +142,8 @@ async def google_callback(
         expires_in=tokens["expires_in"],
         scope=tokens["scope"],
     )
-    logger.info(
-        "Tenant %s conectó su cuenta Google (%s)",
-        current_user.tenant_id, google_email,
-    )
+    # Minimización Habeas Data: el correo del dueño no va al log
+    logger.info("Tenant %s conectó su cuenta Google", current_user.tenant_id)
     return GoogleCallbackResult(connected=True, google_email=google_email)
 
 

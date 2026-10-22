@@ -333,7 +333,7 @@ function ContactFicha({
                       {formatDate(quote.created_at)}
                     </time>
                     <a
-                      href={`/servicios/quoter/cotizaciones/${quote.id}`}
+                      href={`/cotizador/cotizaciones/${quote.id}`}
                       className="rounded px-2 py-1 text-sm font-medium text-pine hover:bg-pine-wash"
                     >
                       Ver

@@ -173,11 +173,12 @@ DEV_STATUS: dict[str, str] = {
     "email_calendar": "active", # Google Workspace: Gmail, Calendar, Sheets, Docs, Drive, Forms
 }
 
-# Workspace del panel para servicios activos (donde vive "Entrar")
+# Workspace del panel para servicios activos (donde vive "Entrar").
+# Rutas del rediseño Dark Premium: /cotizador, /agenda, /clientes.
 WORKSPACE_ROUTE: dict[str, str] = {
-    "quoter": "/servicios/quoter",
-    "crm": "/servicios/crm",
-    "reminders": "/servicios/reminders",
+    "quoter": "/cotizador",
+    "crm": "/clientes",
+    "reminders": "/agenda",
 }
 
 # Sub-servicios: viven DENTRO del workspace de su servicio padre, no como

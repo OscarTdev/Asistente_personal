@@ -6,37 +6,37 @@ Instrucciones para cualquier agente de IA (Antigravity, Claude Code, OpenCode, C
 
 Asistente personal por WhatsApp multi-módulo. El bot se llama **Aura** por defecto (renombrable; vive en `tenants.bot_name`). Primer módulo: **cotizador con IA para oficios** (electricidad, HVAC, instalaciones) en Colombia — el técnico envía audio/foto/texto y el bot genera una cotización en PDF desde un catálogo de precios propio.
 
-- Estado: Fase 1 (esqueleto de punta a punta) construida; Fase 2 (catálogo y cotización) en desarrollo.
-- Fases detalladas: `docs/FASES.md` · Catálogo de módulos: `docs/MODULOS.md`.
+- Estado: **Fase 1 y Fase 2 completas**, Fases de Automatización, Módulos Operativos (16 servicios activos, 39 modelos) y Google OAuth construidos.
+- Fases detalladas: `docs/FASES.md` · Estado actual: `docs/ESTADO.md` · Catálogo de módulos: `docs/MODULOS.md` · Auditoría: `docs/AUDITORIA.md`.
 
 ## Stack
 
-- **Backend (`backend/`)**: Python 3.12+, FastAPI, SQLAlchemy 2.x (async), Pydantic v2, psycopg 3, Alembic. Tareas en segundo plano: ARQ + Redis.
-- **Frontend (`admin-web/`)**: React + Vite + TypeScript, Tailwind, shadcn/ui, TanStack Query, Recharts.
-- **Infra**: Docker Compose — PostgreSQL 16 con pgvector y Redis 7.
+- **Backend (`backend/`)**: Python 3.12+, FastAPI, SQLAlchemy 2.x (async), Pydantic v2, psycopg 3, Alembic. Tareas en segundo plano: ARQ + Redis (y BackgroundTasks local).
+- **Frontend (`admin-web/`)**: React + Vite + TypeScript, Tailwind v4, shadcn/ui, TanStack Query, Recharts, Lucide Icons.
+- **Infra**: Docker Compose — PostgreSQL 16 con pgvector (puerto host `5433`) y Redis 7 (puerto `6379`).
 
 ## Estructura
 
 ```
 backend/app/
   api/        → routers, versionados en /api/v1
-  models/     → modelos SQLAlchemy
-  schemas/    → esquemas Pydantic
-  services/   → lógica de negocio
+  models/     → 39 modelos SQLAlchemy (multi-tenant estricto)
+  schemas/    → esquemas Pydantic v2
+  services/   → 16 servicios (orquestador con 19 intenciones, quoter, CRM, pagos, etc.)
   channels/   → capa de canal abstracta (Evolution API hoy, Cloud API / Telegram mañana)
   workers/    → tareas ARQ
-  core/       → config, seguridad, deps
-backend/alembic/   → migraciones
-admin-web/         → panel de administración (React)
-docker-compose.yml → Postgres + Redis (luego Evolution API)
+  core/       → config (lee .env raíz), seguridad, deps
+backend/alembic/   → 29 migraciones lineales hasta Google OAuth
+admin-web/         → panel de administración moderno Dark Premium (React + Vite)
+docker-compose.yml → Postgres (5433) + Redis (6379)
 ```
 
 ## Base de datos
 
-- Postgres en Docker: `localhost:5432` · usuario `asistente` · contraseña `asistente` · base `asistente` (ver `.env`; credenciales solo para desarrollo local).
-- `DATABASE_URL` usa el driver async `postgresql+psycopg_async://`.
+- Postgres en Docker: `127.0.0.1:5433` · usuario `asistente` · contraseña `asistente` · base `asistente` (ver `.env` en la raíz).
+- `DATABASE_URL` usa el driver async `postgresql+psycopg_async://` apuntando a `127.0.0.1:5433`.
 - Redis: `localhost:6379`.
-- Migraciones con Alembic. **Nota actual: `backend/alembic/versions/` está vacío** — los modelos existen en `app/models/` pero aún no se ha generado la migración inicial. Para crearla: `alembic revision --autogenerate -m "..."` y luego `alembic upgrade head`.
+- Migraciones con Alembic: 29 migraciones lineales en `backend/alembic/versions/`. Para aplicar: `alembic upgrade head`.
 - **Todas las tablas llevan `tenant_id` desde el inicio** (única excepción: `tenants`). Prohibido crear una tabla sin aislamiento multi-tenant.
 
 ## Reglas de arquitectura (no negociables)

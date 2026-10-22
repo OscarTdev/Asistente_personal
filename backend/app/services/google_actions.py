@@ -12,6 +12,7 @@ send_email de aquí (spec §8.1).
 
 import logging
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -36,6 +37,20 @@ def _colombia(dt: datetime) -> datetime:
 
 def _month_name(now: datetime) -> str:
     return f"{_MESES[now.month - 1]} {now.year}"
+
+
+def _month_bounds(now_col: datetime) -> tuple[datetime, datetime]:
+    """Ventana [inicio, fin) del mes colombiano dado (hora local) → UTC.
+
+    Recibe la hora Colombia y devuelve los límites del mes LOCAL
+    convertidos a UTC (Colombia = UTC-5 fijo).
+    """
+    start_col = now_col.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start_col.month == 12:
+        end_col = start_col.replace(year=start_col.year + 1, month=1)
+    else:
+        end_col = start_col.replace(month=start_col.month + 1)
+    return start_col + timedelta(hours=5), end_col + timedelta(hours=5)
 
 
 async def connection_status(db: AsyncSession, *, tenant_id: UUID) -> dict:
@@ -120,12 +135,10 @@ async def export_expenses_sheet(
     db: AsyncSession, *, tenant: Tenant
 ) -> dict:
     """Exporta los gastos del mes a una hoja de cálculo nueva."""
-    now = datetime.now(UTC)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
+    # "Este mes" en hora Colombia (UTC-5): un gasto del 31/10 20:00 Bogotá
+    # es 01:00 UTC del 1/11 — con ventana UTC caería en el mes equivocado.
+    now_col = _colombia(datetime.now(UTC))
+    start, end = _month_bounds(now_col)
 
     rows = (
         await db.execute(
@@ -140,22 +153,22 @@ async def export_expenses_sheet(
     ).scalars().all()
 
     values = [["Fecha", "Descripción", "Categoría", "Valor (COP)"]]
-    total = 0
+    total = Decimal("0")
     for e in rows:
         values.append(
             [
                 _colombia(e.expense_date).strftime("%d/%m/%Y"),
                 e.description,
                 e.category,
-                f"{e.amount}",
+                f"{e.amount:.0f}",  # COP entero: los centavos no circulan
             ]
         )
-        total += int(e.amount)
-    values.append(["", "", "TOTAL", f"{total}"])
+        total += e.amount
+    values.append(["", "", "TOTAL", f"{total:.0f}"])
 
     token = await google_oauth.get_access_token(db, tenant_id=tenant.id)
     sheet = await google_api.sheets_create_spreadsheet(
-        token, title=f"Gastos {_month_name(now)} — {tenant.name}"
+        token, title=f"Gastos {_month_name(now_col)} — {tenant.name}"
     )
     await google_api.sheets_write_values(
         token, spreadsheet_id=sheet["spreadsheet_id"], values=values
@@ -167,11 +180,12 @@ async def create_month_report_doc(
     db: AsyncSession, *, tenant: Tenant
 ) -> dict:
     """Informe del mes en un documento nuevo (gastos + cotizaciones)."""
-    now = datetime.now(UTC)
-    month_name = _month_name(now)
+    now_col = _colombia(datetime.now(UTC))
+    month_name = _month_name(now_col)
 
-    # Gastos del mes por categoría
-    summary = await monthly_summary(db, tenant_id=tenant.id, month=now)
+    # Gastos del mes por categoría (ventana del mes colombiano)
+    start, end = _month_bounds(now_col)
+    summary = await monthly_summary(db, tenant_id=tenant.id, month=now_col)
     lines = [
         f"Informe de {month_name} — {tenant.name}",
         "",
@@ -187,12 +201,7 @@ async def create_month_report_doc(
     else:
         lines.append("Sin gastos registrados este mes.")
 
-    # Cotizaciones del mes
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start.month == 12:
-        end = start.replace(year=start.year + 1, month=1)
-    else:
-        end = start.replace(month=start.month + 1)
+    # Cotizaciones del mes (misma ventana local)
     quote_rows = (
         await db.execute(
             select(Quote.status, func.count())

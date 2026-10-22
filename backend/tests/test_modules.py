@@ -97,21 +97,26 @@ async def test_modules_order_sub_services_and_workspaces(
     assert data["reminders"]["parent"] is None
     assert data["crm"]["parent"] is None
 
-    # Servicios construidos con su workspace (botón Entrar)
+    # Servicios construidos con su workspace (botón Entrar).
+    # Rutas del panel Dark Premium: /cotizador, /clientes, /agenda
     assert data["quoter"]["dev_status"] == "active"
-    assert data["quoter"]["workspace"] == "/servicios/quoter"
+    assert data["quoter"]["workspace"] == "/cotizador"
     assert data["crm"]["dev_status"] == "active"
-    assert data["crm"]["workspace"] == "/servicios/crm"
+    assert data["crm"]["workspace"] == "/clientes"
     assert data["reminders"]["dev_status"] == "active"
-    assert data["reminders"]["workspace"] == "/servicios/reminders"
+    assert data["reminders"]["workspace"] == "/agenda"
 
     # Un sub-servicio activo no tiene workspace propio: vive dentro del padre
     assert data["follow_up"]["dev_status"] == "active"
     assert data["follow_up"]["workspace"] is None
 
-    # Un servicio sin construir sigue en desarrollo y sin workspace
-    assert data["collections"]["dev_status"] == "development"
+    # Cobranza está activo pero opera vía WhatsApp / MercadoPago sin workspace propio en el panel
+    assert data["collections"]["dev_status"] == "active"
     assert data["collections"]["workspace"] is None
+
+    # Un servicio sin construir sigue en desarrollo y sin workspace
+    assert data["daily_summary"]["dev_status"] == "development"
+    assert data["daily_summary"]["workspace"] is None
 
 
 @pytest.mark.asyncio

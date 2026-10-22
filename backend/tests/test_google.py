@@ -277,13 +277,17 @@ async def test_sheets_export_creates_sheet(
     tenant: Tenant,
 ):
     await _add_connection(db_session, tenant)
+    # Gasto a mediodía Bogotá del día 1 del mes local: siempre dentro de
+    # la ventana (inmune al borde de mes UTC/Colombia)
+    now_col = datetime.now(UTC) - timedelta(hours=5)
+    safe_date = now_col.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
     db_session.add(
         Expense(
             tenant_id=tenant.id,
             description="20 metros de cable",
             category="materiales",
             amount=Decimal("45000"),
-            expense_date=datetime.now(UTC),
+            expense_date=safe_date + timedelta(hours=5),
         )
     )
     await db_session.commit()
@@ -316,7 +320,8 @@ async def test_sheets_export_creates_sheet(
     assert data["url"] == "https://sheets/x"
     assert data["rows"] == 1
     assert calls["values"][0] == ["Fecha", "Descripción", "Categoría", "Valor (COP)"]
-    assert calls["values"][-1][3] == "45000"
+    # COP entero: el total no arrastra ".00" (fix de la auditoría)
+    assert calls["values"][-1] == ["", "", "TOTAL", "45000"]
 
 
 # ── Orquestador: handlers de chat ────────────────────────────────────────────
@@ -362,6 +367,7 @@ async def test_email_summary_replies_with_inbox(
 async def test_email_draft_creates_pending_action(
     db_session: AsyncSession, tenant: Tenant
 ):
+    await _add_connection(db_session, tenant)  # el borrador exige conexión
     chat = await _seed_owner_chat(db_session, tenant)
     target = Contact(
         tenant_id=tenant.id,
@@ -402,6 +408,7 @@ async def test_email_draft_creates_pending_action(
 async def test_email_without_contact_email_asks_for_it(
     db_session: AsyncSession, tenant: Tenant
 ):
+    await _add_connection(db_session, tenant)  # el borrador exige conexión
     chat = await _seed_owner_chat(db_session, tenant)
     target = Contact(tenant_id=tenant.id, wa_id="573009990002", name="Pedro")
     db_session.add(target)
@@ -661,3 +668,162 @@ async def test_valid_token_returned_without_refresh(
     await _add_connection(db_session, tenant)
     token = await google_oauth.get_access_token(db_session, tenant_id=tenant.id)
     assert token == "at-test"
+
+
+# ── Regresión: bugs cazados por la auditoría de agentes (22 oct) ─────────────
+
+
+async def test_callback_rejects_used_code(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    admin_user: User,
+    tenant: Tenant,
+):
+    """Google rechaza el code (expirado/reusado) → 409, no 500."""
+    async def failing_exchange(code: str) -> dict:
+        raise google_oauth.GoogleAuthError(
+            "Google rechazó la conexión; inténtalo de nuevo"
+        )
+
+    state = google_oauth.build_state_token(tenant.id)
+    from app.services import google_oauth as oauth_module
+
+    original = oauth_module.exchange_code
+    oauth_module.exchange_code = failing_exchange  # type: ignore[assignment]
+    try:
+        response = await client.post(
+            "/api/v1/google/callback",
+            json={"code": "c" * 20, "state": state},
+            headers=_headers(admin_user),
+        )
+    finally:
+        oauth_module.exchange_code = original
+
+    assert response.status_code == 409
+    assert "rechazó" in response.json()["detail"]
+
+
+async def test_confirmation_send_failure_keeps_pending(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Si el envío falla, la acción vuelve a 'pending': reintento con «sí»."""
+    chat = await _seed_owner_chat(db_session, tenant)
+    db_session.add(
+        PendingAction(
+            tenant_id=tenant.id,
+            conversation_id=chat["conversation"].id,
+            action_type="send_email",
+            payload={
+                "to": "juliana@x.com",
+                "subject": "Mensaje",
+                "body": "Hola",
+                "contact_id": str(uuid.uuid4()),
+            },
+        )
+    )
+    await db_session.commit()
+    fake = FakeChannel()
+
+    async def failing_send(db, *, tenant_id, to, subject, body):
+        raise RuntimeError("Google caído")
+
+    from app.services import google_actions as actions_module
+
+    original = actions_module.send_email
+    actions_module.send_email = failing_send  # type: ignore[assignment]
+    try:
+        handled = await orchestrator._handle_confirmation(
+            db_session,
+            tenant=tenant,
+            channel=fake,
+            conversation=chat["conversation"],
+            wa_id="573005550000",
+            text="sí",
+        )
+    finally:
+        actions_module.send_email = original
+
+    assert handled is True
+    assert "reintentar" in fake.sent[-1][1].lower()
+    pending = (
+        await db_session.execute(
+            select(PendingAction).where(
+                PendingAction.conversation_id == chat["conversation"].id
+            )
+        )
+    ).scalar_one()
+    assert pending.status == "pending"  # vuelve a estar disponible
+
+
+async def test_draft_without_connection_tells_owner(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Sin cuenta Google no se ofrece el borrador: se guía al dueño."""
+    chat = await _seed_owner_chat(db_session, tenant)
+    target = Contact(
+        tenant_id=tenant.id,
+        wa_id="573009990001",
+        name="Juliana",
+        email="juliana@x.com",
+    )
+    db_session.add(target)
+    await db_session.commit()
+    fake = FakeChannel()
+
+    await orchestrator._handle_google_email(
+        db_session,
+        tenant=tenant,
+        channel=fake,
+        conversation=chat["conversation"],
+        wa_id="573005550000",
+        intent=AssistantIntent(
+            intention="google_email",
+            contact_name="Juliana",
+            message_text="Hola",
+        ),
+    )
+
+    assert "🔗" in fake.sent[-1][1]
+    pending = (
+        await db_session.execute(
+            select(PendingAction).where(
+                PendingAction.conversation_id == chat["conversation"].id
+            )
+        )
+    ).scalar_one_or_none()
+    assert pending is None  # no se crea borrador imposible de enviar
+
+
+async def test_month_window_is_colombia_not_utc(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Un gasto del 31/10 20:00 Bogotá (01:00 UTC nov) es de OCTUBRE."""
+    from app.services.expenses import monthly_summary
+
+    # 31 de octubre, 20:00 Bogotá = 01:00 UTC del 1 de noviembre
+    expense = Expense(
+        tenant_id=tenant.id,
+        description="Cable",
+        category="materiales",
+        amount=Decimal("1000"),
+        expense_date=datetime(2026, 11, 1, 1, 0, tzinfo=UTC),
+    )
+    db_session.add(expense)
+    await db_session.commit()
+
+    # "Este mes" a las 31 oct 23:00 HORA COLOMBIA → octubre local:
+    # el gasto de hace 3 horas SIGUE dentro del mes
+    oct_summary = await monthly_summary(
+        db_session,
+        tenant_id=tenant.id,
+        month=datetime(2026, 10, 31, 23, 0),  # hora Colombia
+    )
+    assert oct_summary["total"] == Decimal("1000")
+
+    # Ya en noviembre local (1 nov 04:00 Bogotá): el gasto ya no entra
+    nov_summary = await monthly_summary(
+        db_session,
+        tenant_id=tenant.id,
+        month=datetime(2026, 11, 1, 4, 0),  # hora Colombia
+    )
+    assert nov_summary["total"] == Decimal("0")

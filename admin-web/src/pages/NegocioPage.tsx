@@ -12,13 +12,11 @@ import {
   useUploadBrandingLogo,
 } from '../hooks/useBranding'
 import {
+  useGmailTest,
   useGoogleAuthorize,
   useGoogleDisconnect,
   useGoogleStatus,
 } from '../hooks/useGoogle'
-import { fetchGmailSummary } from '../lib/api'
-import { GmailSummaryItem } from '../types'
-import { useQuery } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 
 function LogoCard() {
@@ -129,11 +127,7 @@ function GoogleCard() {
   const [testOpen, setTestOpen] = useState(false)
 
   // Prueba de la conexión: los 3 correos más recientes (solo lectura)
-  const gmailTest = useQuery<GmailSummaryItem[], Error>({
-    queryKey: ['google', 'gmail-test'],
-    queryFn: () => fetchGmailSummary(3),
-    enabled: testOpen,
-  })
+  const gmailTest = useGmailTest(testOpen)
 
   const handleConnect = () => {
     setNote(null)
@@ -235,9 +229,11 @@ function GoogleCard() {
         </Button>
       ) : (
         <p className="rounded border border-dashed border-linen-300 p-3 text-xs text-linen-600">
-          El administrador de la plataforma aún no ha configurado las
-          credenciales de Google (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).
-          Cuando lo haga, aquí podrás conectar tu cuenta.
+          Falta un paso de plataforma: crear las credenciales de Google
+          (GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET) siguiendo la guía
+          <code className="mx-1 rounded bg-linen-100 px-1 py-0.5">docs/GOOGLE.md §1</code>
+          y añadirlas al archivo .env de la raíz. Cuando estén, aquí
+          aparecerá el botón para conectar tu cuenta.
         </p>
       )}
       {note && (

@@ -216,7 +216,7 @@ export default function QuoteDetailPage() {
     <div>
       {/* Back to the desk */}
       <Link
-        to="/servicios/quoter/cotizaciones"
+        to="/cotizador/cotizaciones"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-pine hover:underline"
       >
         <IconArrowLeft className="h-4 w-4" />

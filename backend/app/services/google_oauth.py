@@ -39,7 +39,8 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
-    "https://www.googleapis.com/auth/calendar",
+    # Menor privilegio: solo leemos/creamos eventos, no calendarios completos
+    "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/documents",
@@ -74,6 +75,7 @@ def build_state_token(tenant_id: UUID) -> str:
     """JWT corto que ata el flujo OAuth al tenant que lo inició."""
     payload = {
         "sub": "google-oauth",
+        "aud": "google-oauth",
         "tenant_id": str(tenant_id),
         "exp": datetime.now(UTC) + timedelta(minutes=10),
     }
@@ -89,6 +91,7 @@ def verify_state_token(state: str) -> UUID:
             state,
             get_settings().jwt_secret,
             algorithms=[get_settings().jwt_algorithm],
+            audience="google-oauth",
         )
         if payload.get("sub") != "google-oauth":
             raise ValueError("No es un state de Google")
@@ -258,11 +261,13 @@ async def disconnect(db: AsyncSession, *, tenant_id: UUID) -> bool:
     ).scalar_one_or_none()
     if conn is None:
         return False
-    # Revocar en Google es best-effort: la fila se borra pase lo que pase
+    # Revocar en Google es best-effort: la fila se borra pase lo que pase.
+    # Token en el body, no en query string (Google desaconseja query por los logs)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
-                GOOGLE_REVOKE_URL, params={"token": conn.refresh_token or conn.access_token}
+                GOOGLE_REVOKE_URL,
+                data={"token": conn.refresh_token or conn.access_token},
             )
     except httpx.HTTPError:
         logger.warning("No pude revocar el token en Google; borro la fila igual")

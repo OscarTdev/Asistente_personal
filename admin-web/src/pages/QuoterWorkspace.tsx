@@ -5,9 +5,9 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { IconArrowLeft } from '../components/ui/icons'
 
 const tabs = [
-  { to: '/servicios/quoter/catalogo', label: 'Catálogo de precios' },
-  { to: '/servicios/quoter/cotizaciones', label: 'Cotizaciones' },
-  { to: '/servicios/quoter/seguimiento', label: 'Seguimiento' },
+  { to: '/cotizador/catalogo', label: 'Catálogo de precios' },
+  { to: '/cotizador/cotizaciones', label: 'Cotizaciones' },
+  { to: '/cotizador/seguimiento', label: 'Seguimiento' },
 ]
 
 export default function QuoterWorkspace() {

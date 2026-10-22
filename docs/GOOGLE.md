@@ -42,7 +42,7 @@ cuenta con ese client y sus tokens quedan en **su** fila
      | Correo del dueño | `https://www.googleapis.com/auth/userinfo.email` |
      | Gmail (leer) | `https://www.googleapis.com/auth/gmail.readonly` |
      | Gmail (enviar) | `https://www.googleapis.com/auth/gmail.send` |
-     | Calendar | `https://www.googleapis.com/auth/calendar` |
+     | Calendar (eventos) | `https://www.googleapis.com/auth/calendar.events` |
      | Sheets | `https://www.googleapis.com/auth/spreadsheets` |
      | Drive (solo archivos de la app) | `https://www.googleapis.com/auth/drive.file` |
      | Docs | `https://www.googleapis.com/auth/documents` |
@@ -96,8 +96,9 @@ a `is_active=false` y el bot le dice al dueño que reconecte en el panel.
 
 ## 3. Endpoints de la API
 
-Todos bajo `/api/v1/google`, autenticados con Bearer token y solo para
-el rol `admin` del tenant (el dueño). Errores: `409` = no conectado o
+Todos bajo `/api/v1/google`, autenticados con Bearer token del panel. El
+`status` acepta cualquier usuario autenticado del tenant; **el resto exige
+rol `admin`** (el dueño). Errores: `409` = no conectado o
 sesión expirada (reconectar), `422` = plataforma sin credenciales,
 `502` = Google respondió con error.
 
@@ -112,7 +113,7 @@ sesión expirada (reconectar), `422` = plataforma sin credenciales,
 | POST | `/calendar/events` | Crea un evento (ISO 8601, naive = hora Colombia) |
 | POST | `/sheets/export-expenses` | Gastos del mes → hoja nueva con total |
 | POST | `/docs/month-report` | Informe del mes → documento nuevo |
-| GET | `/drive/files?max_results=10` | Archivos recientes del Drive |
+| GET | `/drive/files?max_results=10` | Archivos recientes (solo los creados por la app) |
 | POST | `/forms/satisfaction-survey` | Encuesta de satisfacción lista para compartir |
 
 ---

@@ -44,7 +44,10 @@ async def test_engine() -> AsyncIterator[AsyncEngine]:
     admin_url = make_url(settings.database_url).set(database="postgres")
     admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     async with admin_engine.connect() as conn:
-        await conn.exec_driver_sql(f'DROP DATABASE IF EXISTS "{TEST_DB_NAME}"')
+        # WITH FORCE: tolera sesiones residuales tras reinicios del host
+        await conn.exec_driver_sql(
+            'DROP DATABASE IF EXISTS "asistente_test" WITH (FORCE)'
+        )
         await conn.exec_driver_sql(f'CREATE DATABASE "{TEST_DB_NAME}"')
     await admin_engine.dispose()
 

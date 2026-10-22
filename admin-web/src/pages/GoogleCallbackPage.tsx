@@ -68,16 +68,9 @@ export default function GoogleCallbackPage() {
             No pude conectar tu cuenta
           </h1>
           <ErrorSlip message={error} />
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4">
             <Button type="button" onClick={() => navigate('/negocio')}>
               Volver a Mi negocio
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => window.location.reload()}
-            >
-              Reintentar
             </Button>
           </div>
         </>

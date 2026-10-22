@@ -1,32 +1,72 @@
-// The concierge desk: bottle-green sidebar (the uniform) with a sliding
-// brass rail marking the active section. On mobile the desk becomes a
-// top bar with brass-underlined tabs.
+// AppLayout v2 — Dark Premium.
+// Sidebar reorganizado por secciones claras:
+//   ASISTENTE: Panel, Cotizaciones, CRM, Recordatorios
+//   MI NEGOCIO: Configuración
+//   SUPERADMIN (solo is_platform_admin): Negocios, Pagos & Planes, Plataforma, Admin Completo
 
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
-import { IconLogout, IconPanel, IconPerson, IconPower, IconReceipt, IconTag, IconWifi } from '../ui/icons'
+import {
+  IconGrid,
+  IconFileText,
+  IconUsers,
+  IconCalendar,
+  IconSettings,
+  IconLogout,
+  IconShield,
+  IconBuilding,
+  IconCreditCard,
+  IconWifi,
+  IconPanel,
+  IconChevronDown,
+  IconChevronRight,
+  IconZap,
+  IconBell,
+} from '../ui/icons'
 
 interface NavItem {
   to: string
   label: string
   icon: (props: React.SVGProps<SVGSVGElement>) => JSX.Element
   end?: boolean
+  badge?: string
 }
 
-// Sidebar por rol (adendo §3.1 y §3.2): el dueño ve su asistente; el
-// superadmin además ve su plataforma (Clientes, Pagos y planes, Plataforma).
-const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Panel', icon: IconPanel, end: true },
-  { to: '/servicios', label: 'Servicios', icon: IconPower },
-  { to: '/negocio', label: 'Mi negocio', icon: IconPerson },
+interface NavSection {
+  label: string
+  items: NavItem[]
+}
+
+// ── Secciones del sidebar por rol ──────────────────────────────────────────
+const OWNER_SECTIONS: NavSection[] = [
+  {
+    label: 'Asistente',
+    items: [
+      { to: '/', label: 'Panel', icon: IconGrid, end: true },
+      { to: '/cotizador', label: 'Cotizador', icon: IconFileText },
+      { to: '/clientes', label: 'Clientes', icon: IconUsers },
+      { to: '/agenda', label: 'Recordatorios', icon: IconCalendar },
+    ],
+  },
+  {
+    label: 'Mi Negocio',
+    items: [
+      { to: '/negocio', label: 'Configuración', icon: IconSettings },
+    ],
+  },
 ]
 
-const PLATFORM_ITEMS: NavItem[] = [
-  { to: '/admin', label: 'Admin', icon: IconPanel },
-  { to: '/clientes', label: 'Clientes', icon: IconTag },
-  { to: '/pagos', label: 'Pagos y planes', icon: IconReceipt },
-  { to: '/plataforma', label: 'Plataforma', icon: IconWifi },
+const PLATFORM_SECTIONS: NavSection[] = [
+  {
+    label: 'Plataforma',
+    items: [
+      { to: '/admin', label: 'Negocios', icon: IconBuilding },
+      { to: '/pagos', label: 'Pagos y planes', icon: IconCreditCard },
+      { to: '/plataforma', label: 'Conexión WhatsApp', icon: IconWifi },
+      { to: '/servicios', label: 'Módulos y permisos', icon: IconZap },
+    ],
+  },
 ]
 
 export default function AppLayout() {
@@ -34,79 +74,138 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const botName = user?.bot_name ?? 'Aura'
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
-  const items: NavItem[] = [...NAV_ITEMS]
-  if (user?.is_platform_admin) {
-    items.splice(1, 0, ...PLATFORM_ITEMS)
-  }
+  const isAdmin = user?.is_platform_admin
 
-  // The brass rail slides to the active section — the one authored motion.
-  const itemRefs = useRef<Record<string, HTMLAnchorElement | null>>({})
-  const [railTop, setRailTop] = useState<number | null>(null)
-
-  useEffect(() => {
-    const active = items.find((item) =>
-      item.end ? location.pathname === '/' : location.pathname.startsWith(item.to)
-    )
-    const element = active ? itemRefs.current[active.to] : null
-    if (element) {
-      setRailTop(element.offsetTop)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname])
+  // Las secciones del owner siempre aparecen; las de plataforma solo para superadmin
+  const sections: NavSection[] = isAdmin
+    ? [...OWNER_SECTIONS, ...PLATFORM_SECTIONS]
+    : OWNER_SECTIONS
 
   const handleLogout = () => {
     logout()
     navigate('/login')
   }
 
+  // Cierra el sidebar mobile al navegar
+  useEffect(() => { setMobileSidebarOpen(false) }, [location.pathname])
+
+  const initials = (user?.email ?? 'A')[0].toUpperCase()
+
   return (
-    <div className="min-h-screen bg-ground">
-      {/* Desktop: the concierge's sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col bg-pine md:flex">
-        <div className="border-b border-white/10 px-5 py-5">
-          <div className="text-lg font-bold tracking-[0.22em] text-ground">
-            {botName.toUpperCase()}
+    <div className="min-h-screen" style={{ background: 'var(--color-bg-base)', display: 'flex' }}>
+
+      {/* ── Mobile overlay ────────────────────────────────────────────── */}
+      {mobileSidebarOpen && (
+        <div
+          className="fixed inset-0 z-40 md:hidden"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+
+      {/* ── SIDEBAR ───────────────────────────────────────────────────── */}
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-60 flex-col sidebar
+          transition-transform duration-300 ease-in-out
+          ${mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          md:translate-x-0 md:flex`}
+        style={{ display: 'flex' }}
+      >
+        {/* Logo / Bot name */}
+        <div className="flex items-center gap-3 px-4 py-5" style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+          <div
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+              color: '#fff',
+              boxShadow: '0 0 12px rgba(124,58,237,0.4)',
+            }}
+          >
+            {botName[0].toUpperCase()}
           </div>
-          <div className="mt-1 text-[0.6875rem] font-semibold uppercase tracking-[0.09em] text-linen-300">
-            Panel de administración
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              {botName}
+            </div>
+            <div className="text-[10px] font-medium" style={{ color: 'var(--color-text-tertiary)', letterSpacing: '0.06em' }}>
+              Panel de control
+            </div>
           </div>
         </div>
-        <nav className="relative flex-1 px-2 py-4">
-          {railTop !== null && (
-            <div
-              aria-hidden="true"
-              className="absolute left-0 w-[3px] rounded-r bg-brass transition-[top] duration-150 ease-out"
-              style={{ top: railTop, height: 40 }}
-            />
-          )}
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              ref={(element) => {
-                itemRefs.current[item.to] = element
-              }}
-              className={({ isActive }) =>
-                `flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-white/10 text-brass-bright'
-                    : 'text-ground/90 hover:bg-white/5 hover:text-ground'
-                }`
-              }
-            >
-              <item.icon className="h-5 w-5 shrink-0" />
-              {item.label}
-            </NavLink>
+
+        {/* Superadmin badge */}
+        {isAdmin && (
+          <div className="px-3 pt-3">
+            <div className="superadmin-banner">
+              <IconShield className="h-3.5 w-3.5 shrink-0" />
+              Super Admin
+            </div>
+          </div>
+        )}
+
+        {/* Navegación por secciones */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3">
+          {sections.map((section, si) => (
+            <div key={section.label}>
+              {(si > 0 || isAdmin) && (
+                <div className="nav-section-label">{section.label}</div>
+              )}
+              {section.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `nav-item mb-0.5 ${isActive ? 'active' : ''}`
+                  }
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.badge && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{ background: 'var(--color-accent-wash)', color: 'var(--color-accent-bright)' }}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
-        <div className="border-t border-white/10 px-5 py-4">
-          <div className="truncate text-xs text-linen-300">{user?.email}</div>
+
+        {/* Footer del sidebar: usuario + cerrar sesión */}
+        <div
+          className="px-3 py-4"
+          style={{ borderTop: '1px solid var(--color-border-subtle)' }}
+        >
+          <div
+            className="flex items-center gap-3 rounded-lg px-2 py-2 mb-2"
+            style={{ background: 'var(--color-bg-raised)' }}
+          >
+            <div
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+              style={{ background: 'var(--color-accent-wash)', color: 'var(--color-accent-bright)', border: '1px solid var(--color-accent-border)' }}
+            >
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-xs font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                {user?.email}
+              </div>
+              <div className="text-[10px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                {isAdmin ? 'Super Admin' : user?.role === 'admin' ? 'Administrador' : 'Usuario'}
+              </div>
+            </div>
+          </div>
           <button
             type="button"
             onClick={handleLogout}
-            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-lacre-tint hover:text-[#f0b3ac]"
+            className="nav-item w-full text-left"
+            style={{ color: 'var(--color-text-tertiary)' }}
           >
             <IconLogout className="h-4 w-4" />
             Cerrar sesión
@@ -114,45 +213,78 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      {/* Mobile: the desk becomes a top bar */}
-      <div className="sticky top-0 z-30 md:hidden">
-        <div className="flex h-14 items-center justify-between bg-pine px-4">
-          <div className="text-base font-bold tracking-[0.22em] text-ground">
-            {botName.toUpperCase()}
-          </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            aria-label="Cerrar sesión"
-            className="inline-flex h-11 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-lacre-tint hover:bg-white/5"
-          >
-            <IconLogout className="h-5 w-5" />
-            Salir
-          </button>
+      {/* ── TOPBAR MÓVIL ──────────────────────────────────────────────── */}
+      <div
+        className="fixed top-0 left-0 right-0 z-30 flex h-14 items-center justify-between px-4 md:hidden"
+        style={{ background: 'var(--color-bg-surface)', borderBottom: '1px solid var(--color-border-subtle)' }}
+      >
+        <button
+          type="button"
+          onClick={() => setMobileSidebarOpen(true)}
+          className="flex h-9 w-9 items-center justify-center rounded-lg"
+          style={{ background: 'var(--color-bg-raised)', color: 'var(--color-text-secondary)' }}
+          aria-label="Abrir menú"
+        >
+          <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
+            <path fillRule="evenodd" d="M3 5h14a1 1 0 0 1 0 2H3a1 1 0 0 1 0-2Zm0 4h14a1 1 0 0 1 0 2H3a1 1 0 0 1 0-2Zm0 4h14a1 1 0 0 1 0 2H3a1 1 0 0 1 0-2Z" clipRule="evenodd" />
+          </svg>
+        </button>
+        <div
+          className="text-sm font-bold tracking-wide"
+          style={{
+            background: 'linear-gradient(135deg, #a78bfa, #6366f1)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            backgroundClip: 'text',
+          }}
+        >
+          {botName}
         </div>
-        <nav className="flex gap-1 overflow-x-auto border-b border-white/10 bg-pine px-2 pb-1">
-          {items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `inline-flex h-11 shrink-0 items-center border-b-2 px-3 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'border-brass text-brass-bright'
-                    : 'border-transparent text-ground/90 hover:text-ground'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold"
+          style={{ background: 'var(--color-accent-wash)', color: 'var(--color-accent-bright)' }}
+        >
+          {initials}
+        </div>
       </div>
 
-      {/* Content */}
-      <main className="md:ml-60 md:px-10 md:py-8 px-4 py-6">
-        <Outlet />
+      {/* ── CONTENIDO PRINCIPAL ───────────────────────────────────────── */}
+      <main
+        className="flex-1 min-h-screen"
+        style={{
+          marginLeft: '240px',
+          paddingTop: '0',
+          paddingBottom: '32px',
+        }}
+      >
+        {/* Topbar desktop */}
+        <div
+          className="hidden md:flex sticky top-0 z-20 h-14 items-center justify-between px-8"
+          style={{ background: 'rgba(10,10,15,0.85)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--color-border-subtle)' }}
+        >
+          <div /> {/* espacio para breadcrumb futuro */}
+          <div className="flex items-center gap-3">
+            {isAdmin && (
+              <div
+                className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
+                style={{ background: 'var(--color-accent-wash)', color: 'var(--color-accent-bright)', border: '1px solid var(--color-accent-border)' }}
+              >
+                <IconShield className="h-3 w-3" />
+                Super Admin
+              </div>
+            )}
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold"
+              style={{ background: 'var(--color-accent-wash)', color: 'var(--color-accent-bright)', border: '1px solid var(--color-accent-border)' }}
+            >
+              {initials}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-8 md:px-10" style={{ marginTop: '0' }}>
+          <Outlet />
+        </div>
       </main>
     </div>
   )
