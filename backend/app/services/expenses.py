@@ -6,7 +6,7 @@ agrupado por categoría con el total.
 """
 
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Expense
+from app.services.time_window import colombia_now, month_bounds
 
 logger = logging.getLogger(__name__)
 
@@ -98,16 +99,11 @@ async def monthly_summary(
 
     "Este mes" se define en hora Colombia (UTC-5): sin esto, un gasto
     del 31 a las 8pm Bogotá caería en el mes siguiente (01:00 UTC).
+    La ventana la calcula time_window.month_bounds (fuente única).
     """
     if month is None:
-        month = datetime.now(UTC) - timedelta(hours=5)  # hora Colombia
-    start_col = month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start_col.month == 12:
-        end_col = start_col.replace(year=start_col.year + 1, month=1)
-    else:
-        end_col = start_col.replace(month=start_col.month + 1)
-    start = start_col + timedelta(hours=5)  # local → UTC
-    end = end_col + timedelta(hours=5)
+        month = colombia_now()
+    start, end = month_bounds(month)
 
     rows = (
         await db.execute(
@@ -154,9 +150,3 @@ async def recent_expenses(
         ).scalars().all()
     )
 
-
-def _format_cop(amount: Decimal | float | int) -> str:
-    try:
-        return f"${float(amount):,.0f}".replace(",", ".")
-    except Exception:
-        return f"${amount}"

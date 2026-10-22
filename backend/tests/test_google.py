@@ -29,7 +29,7 @@ from app.models import (
     User,
 )
 from app.schemas.assistant import AssistantIntent
-from app.services import google_oauth, orchestrator
+from app.services import google_handlers, google_oauth, orchestrator
 
 
 def _headers(user: User) -> dict[str, str]:
@@ -348,7 +348,7 @@ async def test_email_summary_replies_with_inbox(
     original = actions_module.summarize_inbox
     actions_module.summarize_inbox = fake_inbox  # type: ignore[assignment]
     try:
-        await orchestrator._handle_google_email(
+        await google_handlers.handle_google_email(
             db_session,
             tenant=tenant,
             channel=fake,
@@ -379,7 +379,7 @@ async def test_email_draft_creates_pending_action(
     await db_session.commit()
     fake = FakeChannel()
 
-    await orchestrator._handle_google_email(
+    await google_handlers.handle_google_email(
         db_session,
         tenant=tenant,
         channel=fake,
@@ -415,7 +415,7 @@ async def test_email_without_contact_email_asks_for_it(
     await db_session.commit()
     fake = FakeChannel()
 
-    await orchestrator._handle_google_email(
+    await google_handlers.handle_google_email(
         db_session,
         tenant=tenant,
         channel=fake,
@@ -497,7 +497,7 @@ async def test_calendar_lists_events(
     original = actions_module.upcoming_events
     actions_module.upcoming_events = fake_events  # type: ignore[assignment]
     try:
-        await orchestrator._handle_google_calendar(
+        await google_handlers.handle_google_calendar(
             db_session,
             tenant=tenant,
             channel=fake,
@@ -535,7 +535,7 @@ async def test_calendar_create_converts_naive_bogota_time(
     original = actions_module.create_event
     actions_module.create_event = fake_create  # type: ignore[assignment]
     try:
-        await orchestrator._handle_google_calendar(
+        await google_handlers.handle_google_calendar(
             db_session,
             tenant=tenant,
             channel=fake,
@@ -571,7 +571,7 @@ async def test_sheets_handler_replies_with_link(
     original = actions_module.export_expenses_sheet
     actions_module.export_expenses_sheet = fake_export  # type: ignore[assignment]
     try:
-        await orchestrator._handle_google_sheets(
+        await google_handlers.handle_google_sheets(
             db_session,
             tenant=tenant,
             channel=fake,
@@ -599,7 +599,7 @@ async def test_docs_handler_replies_with_link(
     original = actions_module.create_month_report_doc
     actions_module.create_month_report_doc = fake_report  # type: ignore[assignment]
     try:
-        await orchestrator._handle_google_docs(
+        await google_handlers.handle_google_docs(
             db_session,
             tenant=tenant,
             channel=fake,
@@ -620,7 +620,7 @@ async def test_not_connected_tells_owner_to_connect(
     chat = await _seed_owner_chat(db_session, tenant)
     fake = FakeChannel()
 
-    await orchestrator._handle_google_email(
+    await google_handlers.handle_google_email(
         db_session,
         tenant=tenant,
         channel=fake,
@@ -770,7 +770,7 @@ async def test_draft_without_connection_tells_owner(
     await db_session.commit()
     fake = FakeChannel()
 
-    await orchestrator._handle_google_email(
+    await google_handlers.handle_google_email(
         db_session,
         tenant=tenant,
         channel=fake,

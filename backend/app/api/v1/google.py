@@ -11,7 +11,7 @@ Endpoints de conexión (admin del tenant):
     DELETE /api/v1/google/disconnect      → revoca y borra
 
 Endpoints de uso (admin del tenant):
-    GET    /api/v1/google/gmail/summary         → correos recientes
+    GET    /api/v1/google/gmail/summary          → correos recientes
     GET    /api/v1/google/calendar/upcoming     → agenda de N días
     POST   /api/v1/google/calendar/events       → agendar evento
     POST   /api/v1/google/sheets/export-expenses→ gastos del mes → hoja
@@ -21,14 +21,17 @@ Endpoints de uso (admin del tenant):
 """
 
 import logging
+from collections.abc import Coroutine
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
 from app.core.database import get_db
-from app.models import User
+from app.models import Tenant, User
 from app.schemas.google import (
     CalendarEventItem,
     GmailSummaryItem,
@@ -47,6 +50,36 @@ from app.services import google_actions, google_api, google_oauth
 logger = logging.getLogger(__name__)
 router = APIRouter()
 _require_admin = require_role("admin")
+
+
+async def _call_google(coro: Coroutine[Any, Any, Any]) -> Any:
+    """Ejecuta una llamada a Google mapeando sus errores UNA sola vez.
+
+    NotConnected/AuthError → 409 (reconectar en el panel), ApiError → 502.
+    """
+    try:
+        return await coro
+    except google_oauth.GoogleNotConnected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except google_oauth.GoogleAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
+    except google_api.GoogleApiError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+
+
+async def _current_tenant(
+    db: AsyncSession, current_user: User
+) -> Tenant:
+    """El tenant del usuario autenticado (para acciones de negocio)."""
+    return (
+        await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one()
 
 
 def _parse_start_iso(raw: str) -> datetime:
@@ -164,16 +197,11 @@ async def gmail_summary(
     db: AsyncSession = Depends(get_db),
 ) -> list[GmailSummaryItem]:
     """Los correos más recientes de la bandeja del dueño (solo lectura)."""
-    try:
-        messages = await google_actions.summarize_inbox(
+    messages = await _call_google(
+        google_actions.summarize_inbox(
             db, tenant_id=current_user.tenant_id, max_results=max_results
         )
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    )
     return [
         GmailSummaryItem(
             sender=m["from"], subject=m["subject"], date=m["date"], snippet=m["snippet"]
@@ -189,17 +217,11 @@ async def calendar_upcoming(
     db: AsyncSession = Depends(get_db),
 ) -> list[CalendarEventItem]:
     """La agenda del dueño entre hoy y N días."""
-    try:
-        events = await google_actions.upcoming_events(
+    events = await _call_google(
+        google_actions.upcoming_events(
             db, tenant_id=current_user.tenant_id, days=days
         )
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
+    )
     items: list[CalendarEventItem] = []
     for ev in events:
         items.append(
@@ -223,8 +245,8 @@ async def calendar_create_event(
 ) -> CalendarEventItem:
     """Agenda un evento en el calendario principal del dueño."""
     start = _parse_start_iso(body.start_iso)
-    try:
-        event = await google_actions.create_event(
+    event = await _call_google(
+        google_actions.create_event(
             db,
             tenant_id=current_user.tenant_id,
             summary=body.summary,
@@ -232,12 +254,7 @@ async def calendar_create_event(
             duration_minutes=body.duration_minutes,
             description=body.description,
         )
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    )
     return CalendarEventItem(
         summary=event.get("summary", body.summary),
         start=event.get("start", {}).get("dateTime", ""),
@@ -252,23 +269,10 @@ async def sheets_export_expenses(
     db: AsyncSession = Depends(get_db),
 ) -> GoogleExportResult:
     """Exporta los gastos del mes a una hoja de cálculo nueva."""
-    from sqlalchemy import select
-
-    from app.models import Tenant
-
-    tenant = (
-        await db.execute(
-            select(Tenant).where(Tenant.id == current_user.tenant_id)
-        )
-    ).scalar_one()
-    try:
-        result = await google_actions.export_expenses_sheet(db, tenant=tenant)
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    tenant = await _current_tenant(db, current_user)
+    result = await _call_google(
+        google_actions.export_expenses_sheet(db, tenant=tenant)
+    )
     return GoogleExportResult(**result)
 
 
@@ -278,23 +282,10 @@ async def docs_month_report(
     db: AsyncSession = Depends(get_db),
 ) -> GoogleExportResult:
     """Genera el informe del mes en un documento nuevo de Google Docs."""
-    from sqlalchemy import select
-
-    from app.models import Tenant
-
-    tenant = (
-        await db.execute(
-            select(Tenant).where(Tenant.id == current_user.tenant_id)
-        )
-    ).scalar_one()
-    try:
-        result = await google_actions.create_month_report_doc(db, tenant=tenant)
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    tenant = await _current_tenant(db, current_user)
+    result = await _call_google(
+        google_actions.create_month_report_doc(db, tenant=tenant)
+    )
     return GoogleExportResult(**result)
 
 
@@ -304,17 +295,12 @@ async def drive_files(
     current_user: User = Depends(_require_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[GoogleDriveFile]:
-    """Archivos recientes del Drive del dueño."""
-    try:
-        files = await google_actions.drive_recent_files(
+    """Archivos recientes del Drive del dueño (los creados por la app)."""
+    files = await _call_google(
+        google_actions.drive_recent_files(
             db, tenant_id=current_user.tenant_id, max_results=max_results
         )
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    )
     return [
         GoogleDriveFile(
             name=f.get("name", ""),
@@ -332,22 +318,8 @@ async def forms_satisfaction_survey(
     db: AsyncSession = Depends(get_db),
 ) -> GoogleSurveyResult:
     """Crea una encuesta de satisfacción lista para compartir."""
-    from sqlalchemy import select
-
-    from app.models import Tenant
-
-    tenant = (
-        await db.execute(
-            select(Tenant).where(Tenant.id == current_user.tenant_id)
-        )
-    ).scalar_one()
-    try:
-        result = await google_actions.create_satisfaction_survey(db, tenant=tenant)
-    except google_oauth.GoogleNotConnected as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_oauth.GoogleAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    except google_api.GoogleApiError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    tenant = await _current_tenant(db, current_user)
+    result = await _call_google(
+        google_actions.create_satisfaction_survey(db, tenant=tenant)
+    )
     return GoogleSurveyResult(**result)
-

@@ -20,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Expense, GoogleConnection, Quote, Tenant
 from app.services import google_api, google_oauth
-from app.services.expenses import _format_cop, monthly_summary
+from app.services.expenses import monthly_summary
+from app.services.formatting import format_cop
+from app.services.time_window import month_bounds, to_colombia
 
 logger = logging.getLogger(__name__)
 
@@ -30,27 +32,8 @@ _MESES = (
 )
 
 
-def _colombia(dt: datetime) -> datetime:
-    """UTC-5 fijo: Colombia no tiene horario de verano."""
-    return dt - timedelta(hours=5)
-
-
 def _month_name(now: datetime) -> str:
     return f"{_MESES[now.month - 1]} {now.year}"
-
-
-def _month_bounds(now_col: datetime) -> tuple[datetime, datetime]:
-    """Ventana [inicio, fin) del mes colombiano dado (hora local) → UTC.
-
-    Recibe la hora Colombia y devuelve los límites del mes LOCAL
-    convertidos a UTC (Colombia = UTC-5 fijo).
-    """
-    start_col = now_col.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if start_col.month == 12:
-        end_col = start_col.replace(year=start_col.year + 1, month=1)
-    else:
-        end_col = start_col.replace(month=start_col.month + 1)
-    return start_col + timedelta(hours=5), end_col + timedelta(hours=5)
 
 
 async def connection_status(db: AsyncSession, *, tenant_id: UUID) -> dict:
@@ -137,8 +120,8 @@ async def export_expenses_sheet(
     """Exporta los gastos del mes a una hoja de cálculo nueva."""
     # "Este mes" en hora Colombia (UTC-5): un gasto del 31/10 20:00 Bogotá
     # es 01:00 UTC del 1/11 — con ventana UTC caería en el mes equivocado.
-    now_col = _colombia(datetime.now(UTC))
-    start, end = _month_bounds(now_col)
+    now_col = to_colombia(datetime.now(UTC))
+    start, end = month_bounds(now_col)
 
     rows = (
         await db.execute(
@@ -157,7 +140,7 @@ async def export_expenses_sheet(
     for e in rows:
         values.append(
             [
-                _colombia(e.expense_date).strftime("%d/%m/%Y"),
+                to_colombia(e.expense_date).strftime("%d/%m/%Y"),
                 e.description,
                 e.category,
                 f"{e.amount:.0f}",  # COP entero: los centavos no circulan
@@ -180,11 +163,11 @@ async def create_month_report_doc(
     db: AsyncSession, *, tenant: Tenant
 ) -> dict:
     """Informe del mes en un documento nuevo (gastos + cotizaciones)."""
-    now_col = _colombia(datetime.now(UTC))
+    now_col = to_colombia(datetime.now(UTC))
     month_name = _month_name(now_col)
 
     # Gastos del mes por categoría (ventana del mes colombiano)
-    start, end = _month_bounds(now_col)
+    start, end = month_bounds(now_col)
     summary = await monthly_summary(db, tenant_id=tenant.id, month=now_col)
     lines = [
         f"Informe de {month_name} — {tenant.name}",
@@ -195,9 +178,9 @@ async def create_month_report_doc(
     if summary["categories"]:
         for category, data in summary["categories"].items():
             lines.append(
-                f"• {category}: {_format_cop(data['total'])} ({data['count']} gastos)"
+                f"• {category}: {format_cop(data['total'])} ({data['count']} gastos)"
             )
-        lines.append(f"TOTAL: {_format_cop(summary['total'])}")
+        lines.append(f"TOTAL: {format_cop(summary['total'])}")
     else:
         lines.append("Sin gastos registrados este mes.")
 
