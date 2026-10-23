@@ -75,18 +75,24 @@ async def _load_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
     return branding.logo_bytes if branding else None
 
 
-_SYSTEM_PROMPT = """Eres {bot_name}, el asistente por WhatsApp de {tenant_name}.
-Ayudas al dueño del negocio a atender a sus clientes por WhatsApp.
+_SYSTEM_PROMPT = """Eres {bot_name}, el asistente personal de WhatsApp de {tenant_name} (un negocio de oficios en Colombia). Le hablas al DUEÑO del negocio: es tu jefe.
 
-REGLAS:
-- Responde SIEMPRE en español, tono cercano y profesional, mensajes cortos
-  (estilo WhatsApp).
-- Las cotizaciones se arman con el catálogo de precios del negocio: NUNCA
-  inventes precios ni prometas descuentos.
-- Si el cliente pide una cotización, pídele los materiales o servicios que
-  necesita y las cantidades.
-- No ofrezcas servicios que no existen. Si preguntan por algo que no está
-  disponible, dilo con claridad y ofrece tomarle el mensaje.
+QUÉ PUEDES HACER (tienes acceso REAL a los datos del negocio):
+- Cotizar con el catálogo de precios del negocio y generar el PDF (COT-0001).
+- Recordatorios: crearlos, listarlos («qué recordatorios tengo») y cancelarlos («cancela el recordatorio de X»).
+- Notas por texto o voz, buscarlas y borrarlas.
+- Contactos del negocio (CRM): SÍ tienes acceso — puedes buscarlos y escribirles de su parte.
+- Cuentas de cobro (CC), cobros con link de MercadoPago, informes de visita (IV), garantías, mantenimientos preventivos, bitácora de obra, gastos, inventario y rentabilidad por obra.
+- Google (si el dueño conectó su cuenta): su correo, su agenda, hojas de cálculo e informes en Docs.
+
+CÓMO RESPONDES:
+- SIEMPRE en español colombiano: cálido, breve, estilo WhatsApp (1-3 líneas).
+- Una sola pregunta a la vez.
+- NUNCA inventes precios ni promesas: los precios salen del catálogo.
+- Si te preguntan qué puedes hacer o quién eres, responde natural con un resumen breve (4-6 líneas) de la lista de arriba.
+- Si te preguntan si tienes acceso a algo (contactos, correo, agenda), responde con la verdad según la lista.
+- Si el dueño te corrige (ej: «me llamo Oscar»), discúlpate una vez, breve, y usa el nombre correcto en adelante.
+- No ofrezcas servicios que no existen; si piden algo fuera de tu alcance, dilo claro y ofrece tomarle el mensaje.
 """
 
 _CUSTOMER_PROMPT = """Eres {bot_name}, el asistente de WhatsApp de {tenant_name} \
@@ -1194,11 +1200,21 @@ async def _handle_reminder(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
-    """Recordatorios: el bot escribe al dueño en la fecha programada."""
-    from datetime import datetime as dt
+    """Recordatorios: crear, listar («qué tengo pendiente») y cancelar.
 
+    «recuérdame llamar a Juliana el jueves» → crear.
+    «cuándo me recordarás?» / «qué recordatorios tengo» → listar.
+    «cancela el recordatorio de la cita» / «elimina ese recordatorio» → cancelar.
+    """
+    import re
+    from datetime import datetime as dt
+    from datetime import timedelta
+
+    from app.models import Reminder
     from app.services import notes as notes_service
+    from app.services.time_window import to_colombia
 
     async def tell_owner(msg: str) -> None:
         await _send_out_message(
@@ -1206,35 +1222,114 @@ async def _handle_reminder(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
+    async def pending_reminders() -> list[Reminder]:
+        return list(
+            (
+                await db.execute(
+                    select(Reminder)
+                    .where(
+                        Reminder.tenant_id == tenant.id,
+                        Reminder.status == "pending",
+                    )
+                    .order_by(Reminder.remind_at.asc())
+                )
+            ).scalars().all()
+        )
+
+    async def list_reminders() -> None:
+        pendings = await pending_reminders()
+        if not pendings:
+            await tell_owner(
+                "🔕 No tienes recordatorios pendientes. Dime "
+                "«recuérdame X el día Y» y lo apunto."
+            )
+            return
+        lines = ["⏰ Tus recordatorios pendientes:\n"]
+        for r in pendings:
+            cuando = to_colombia(r.remind_at).strftime("%d/%m %I:%M %p")
+            lines.append(f"• {cuando} — {r.content[:60]}")
+        lines.append("\nPara cancelar uno: «cancela el recordatorio de [qué]».")
+        await tell_owner("\n".join(lines))
+
+    text_lower = (text or "").strip().lower()
+
+    # Cancelar: «cancela/elimina/borra ese recordatorio [de X]»
+    cancel_match = re.search(r"\b(cancel\w*|elimin\w*|borr\w*|quita\w*)\b", text_lower)
+    if cancel_match and "recordatorio" in text_lower:
+        pendings = await pending_reminders()
+        if not pendings:
+            await tell_owner("🔕 No tienes recordatorios pendientes por cancelar.")
+            return
+        # El router pudo poner el objetivo en message_text/description;
+        # si dice «ese» (o no especifica) y solo hay uno, se cancela ese.
+        objetivo = (
+            (intent.message_text or intent.description or "").strip().lower()
+        )
+        objetivo = re.sub(r"^(cancel\w*|elimin\w*|borr\w*|quita\w*)\s+", "", objetivo)
+        objetivo = re.sub(r"\b(el|la|ese|esa|de|del)\b", " ", objetivo).strip()
+        elegido: Reminder | None = None
+        if objetivo and objetivo not in ("ese", "esa", "este"):
+            for r in pendings:
+                if objetivo[:12] in r.content.lower():
+                    elegido = r
+                    break
+        elif len(pendings) == 1:
+            elegido = pendings[0]
+        if elegido is None:
+            await list_reminders()
+            await tell_owner("¿Cuál de estos cancelo?")
+            return
+        elegido.status = "cancelled"
+        await db.commit()
+        await tell_owner(f"🗑️ Cancelado: «{elegido.content[:60]}».")
+        return
+
+    # Consultar: pregunta sobre recordatorios SIN contenido nuevo que crear
     content = (intent.message_text or "").strip()
     if not content:
-        # Extraer el contenido del texto original
-        content = intent.description or "Recordatorio"
+        content = (intent.description or "").strip()
+    pregunta = (
+        not content
+        or any(
+            p in text_lower
+            for p in (
+                "cuándo me", "cuando me", "qué recordatorios",
+                "que recordatorios", "mis recordatorios", "tengo pendiente",
+            )
+        )
+    ) and not intent.remind_at
+    if pregunta:
+        await list_reminders()
+        return
+
     if not content:
         await tell_owner("¿Qué quieres que te recuerde?")
         return
 
-    # Parsear la fecha del intent (ISO 8601) o usar +1 día como default
-    from datetime import timedelta
-
+    # Parsear la fecha del intent (ISO 8601) o usar +1 día como default.
+    # Fecha sin zona = HORA COLOMBIA (UTC-5): «a las 2 pm» es 19:00 UTC,
+    # no 14:00 UTC (bug que disparaba recordatorios 5 horas temprano).
     remind_at = None
     if intent.remind_at:
         try:
             remind_at = dt.fromisoformat(intent.remind_at)
+            if remind_at.tzinfo is None:
+                remind_at = (remind_at + timedelta(hours=5)).replace(tzinfo=UTC)
         except ValueError:
             pass
     if remind_at is None:
-        # Default: mañana a las 8:00 AM Colombia (UTC-5 → 13:00 UTC)
-        now = datetime.now(UTC)
-        tomorrow = (now + timedelta(days=1)).replace(hour=13, minute=0, second=0, microsecond=0)
-        remind_at = tomorrow
+        # Default: mañana a las 8:00 AM Colombia
+        now_col = datetime.now(UTC) - timedelta(hours=5)
+        tomorrow_col = (now_col + timedelta(days=1)).replace(
+            hour=8, minute=0, second=0, microsecond=0
+        )
+        remind_at = tomorrow_col + timedelta(hours=5)
 
     await notes_service.save_reminder(
         db, tenant_id=tenant.id, content=content, remind_at=remind_at
     )
     # Formatear la fecha para mostrar (hora Colombia = UTC-5)
-    colombia_time = remind_at - timedelta(hours=5)
-    when = colombia_time.strftime("%d/%m a las %I:%M %p")
+    when = to_colombia(remind_at).strftime("%d/%m a las %I:%M %p")
     await tell_owner(f"⏰ Listo: te recordaré «{content}» el {when}.")
 
 
@@ -2224,7 +2319,8 @@ async def handle_incoming(
                 return
             await _handle_reminder(
                 db, tenant=tenant, channel=channel,
-                conversation=conversation, wa_id=wa_id, intent=intent,
+                conversation=conversation, wa_id=wa_id,
+                intent=intent, text=text,
             )
             return
 
@@ -2268,6 +2364,12 @@ async def handle_incoming(
             text=text,
             system_prompt=_SYSTEM_PROMPT,
             contact_id_for_usage=contact.id,
+        )
+        logger.info(
+            "Mensaje %s atendido (intención %s) en %.0f ms",
+            message.id,
+            intent.intention,
+            (datetime.now(UTC) - _t0).total_seconds() * 1000,
         )
         # Si el dueño escribió por audio, responder también con voz
         # (spec §12: las cifras SIEMPRE van también en texto primero)

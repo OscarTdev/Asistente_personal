@@ -43,3 +43,19 @@ class Channel(ABC):
     ) -> str | None:
         """Envía un documento (ej: PDF de cotización). Devuelve el id del mensaje."""
         raise NotImplementedError(f"{self.name} no soporta envío de documentos")
+
+    async def mark_read(self, to: str, message_id: str) -> None:
+        """Marca un mensaje entrante como leído (check azul).
+
+        Anti-detección: un bot que responde al instante sin leer jamás es
+        patrón de automatización para Meta. No-op por defecto.
+        """
+        return None
+
+    async def send_typing(self, to: str, *, composing: bool = True) -> None:
+        """Muestra/oculta el indicador «escribiendo…» en el chat.
+
+        composing=True al empezar a procesar, False tras responder.
+        No-op por defecto.
+        """
+        return None

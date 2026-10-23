@@ -11,6 +11,7 @@ from .google import router as google_router
 from .modules import router as modules_router
 from .quotes import router as quotes_router
 from .reminders import router as reminders_router
+from .service_data import router as service_data_router
 from .webhooks import router as webhooks_router
 from .whatsapp import router as whatsapp_router
 
@@ -25,6 +26,9 @@ api_router.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
 api_router.include_router(quotes_router, prefix="/quotes", tags=["quotes"])
 api_router.include_router(followup_router, prefix="/followup", tags=["followup"])
 api_router.include_router(reminders_router, prefix="/reminders", tags=["reminders"])
+api_router.include_router(
+    service_data_router, prefix="/service-data", tags=["service-data"]
+)
 api_router.include_router(google_router, prefix="/google", tags=["google"])
 api_router.include_router(whatsapp_router, prefix="/whatsapp", tags=["whatsapp"])
 api_router.include_router(webhooks_router, prefix="/webhooks", tags=["webhooks"])

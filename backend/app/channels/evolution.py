@@ -169,6 +169,60 @@ class EvolutionChannel(Channel):
 
     # ── Estado de conexión (usado por el router /whatsapp del panel) ────────
 
+    @staticmethod
+    def _to_jid(number: str) -> str:
+        """Número → JID de chat directo (necesario para read/presence)."""
+        if "@" in number:
+            return number
+        return f"{number}@s.whatsapp.net"
+
+    async def mark_read(self, to: str, message_id: str) -> None:
+        """Check azul: POST /chat/markMessageAsRead/{instance}.
+
+        Anti-detección de Meta: el bot SIEMPRE lee antes de responder.
+        """
+        settings = self._settings()
+        async with self._client() as client:
+            response = await client.post(
+                f"/chat/markMessageAsRead/{settings.evolution_instance}",
+                json={
+                    "readMessages": [
+                        {
+                            "remoteJid": self._to_jid(to),
+                            "fromMe": False,
+                            "id": message_id,
+                        }
+                    ]
+                },
+            )
+            if response.status_code >= 400:
+                # No es crítico: un check azul fallido no rompe la respuesta
+                logger.warning(
+                    "[EvolutionChannel] mark_read %s falló: HTTP %s",
+                    message_id,
+                    response.status_code,
+                )
+                return
+            logger.debug("[EvolutionChannel] Mensaje %s marcado como leído", message_id)
+
+    async def send_typing(self, to: str, *, composing: bool = True) -> None:
+        """«escribiendo…» / detener: POST /chat/sendPresence/{instance}."""
+        settings = self._settings()
+        async with self._client() as client:
+            response = await client.post(
+                f"/chat/sendPresence/{settings.evolution_instance}",
+                json={
+                    "number": to,
+                    "presence": "composing" if composing else "paused",
+                },
+            )
+            if response.status_code >= 400:
+                logger.warning(
+                    "[EvolutionChannel] sendPresence(%s) falló: HTTP %s",
+                    composing,
+                    response.status_code,
+                )
+
     async def connection_state(self) -> dict[str, Any]:
         """Estado de la instancia: open | close | connecting | offline."""
         settings = self._settings()

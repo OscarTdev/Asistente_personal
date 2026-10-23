@@ -58,7 +58,7 @@ async def webhook_whatsapp(
     channel = get_channel("evolution")
 
     try:
-        message, event, created = await ingest_message(
+        result = await ingest_message(
             db=db, tenant=tenant, channel=channel, payload=payload
         )
     except SelfMessageIgnored:
@@ -71,12 +71,21 @@ async def webhook_whatsapp(
             detail="Payload de webhook inválido",
         ) from exc
 
+    message, event, created = result.message, result.event, result.created
+
     if created and event is not None:
         try:
             await publish_event(redis_client, tenant.id, event)
         except Exception:
             # Redis caído NO rompe el 200 ni la persistencia del mensaje.
             logger.exception("No se pudo publicar el evento %s", event.id)
+
+        # Check azul + «escribiendo…» ANTES de procesar (anti-detección de
+        # Meta: el bot siempre lee primero y muestra que está en ello).
+        if not result.from_me and result.sender_wa_id:
+            background_tasks.add_task(
+                _ack_message_read, result.sender_wa_id, message.whatsapp_message_id
+            )
 
         # El cerebro corre con agrupación (spec §7): varios mensajes seguidos
         # de la misma conversación se procesan como uno solo tras una pausa.
@@ -90,6 +99,19 @@ async def webhook_whatsapp(
         whatsapp_message_id=message.whatsapp_message_id,
         duplicate=not created,
     )
+
+
+async def _ack_message_read(sender_wa_id: str, message_id: str) -> None:
+    """Check azul + «escribiendo…»: el bot se nota humano y atento.
+
+    Fallar no rompe nada: el check es cosmético ante WhatsApp.
+    """
+    try:
+        channel = get_channel("evolution")
+        await channel.mark_read(sender_wa_id, message_id)
+        await channel.send_typing(sender_wa_id)
+    except Exception:
+        logger.exception("No se pudo marcar como leído el mensaje %s", message_id)
 
 
 async def _process_message(
@@ -149,6 +171,12 @@ async def _run_orchestrator(tenant_id, message_id) -> None:
                 contact=contact,
                 conversation=conversation,
             )
+            # Dejar de «escribiendo…»: la respuesta ya salió (Baileys
+            # caduca el presence solo en ~10 s, esto lo cierra limpio)
+            try:
+                await channel.send_typing(contact.wa_id, composing=False)
+            except Exception:
+                logger.debug("No se pudo pausar el presence de %s", contact.wa_id)
     except Exception:
         logger.exception(
             "El orquestador falló para el mensaje %s del tenant %s", message_id, tenant_id

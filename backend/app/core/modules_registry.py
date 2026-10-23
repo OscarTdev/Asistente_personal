@@ -171,6 +171,7 @@ DEV_STATUS: dict[str, str] = {
     "site_log": "active",       # bitácora de obra con avance diario
     "profitability": "active",  # costo real vs lo cotizado
     "email_calendar": "active", # Google Workspace: Gmail, Calendar, Sheets, Docs, Drive, Forms
+    "daily_summary": "active", # resumen diario proactivo (generación + envío ya funcionan)
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar").
@@ -179,6 +180,11 @@ WORKSPACE_ROUTE: dict[str, str] = {
     "quoter": "/cotizador",
     "crm": "/clientes",
     "reminders": "/agenda",
+    "inventory": "/inventario",
+    "maintenance": "/mantenimiento",
+    "warranties": "/garantias",
+    "personal_finance": "/finanzas",
+    "site_log": "/obra",
 }
 
 # Sub-servicios: viven DENTRO del workspace de su servicio padre, no como

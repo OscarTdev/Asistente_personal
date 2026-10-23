@@ -1,0 +1,4 @@
+# Servidor MCP local del proyecto — se instala en el MISMO venv del backend:
+#   backend\.venv\Scripts\python.exe -m pip install -r mcp\requirements.txt
+# psycopg y python-dotenv ya vienen con las dependencias del backend.
+mcp[cli]>=2.0,<3

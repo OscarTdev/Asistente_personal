@@ -15,6 +15,7 @@ import PagosPlanesPage from './pages/PagosPlanesPage'
 import PlataformaPage from './pages/PlataformaPage'
 import RemindersPage from './pages/RemindersPage'
 import NegocioPage from './pages/NegocioPage'
+import ServiceDataPage from './pages/ServiceDataPage'
 import GoogleCallbackPage from './pages/GoogleCallbackPage'
 import AdminPage from './pages/AdminPage'
 
@@ -67,6 +68,13 @@ function App() {
 
         {/* Recordatorios (sidebar: /agenda) */}
         <Route path="/agenda" element={<RemindersPage />} />
+
+        {/* Servicios operativos (página parametrizada) */}
+        <Route path="/inventario" element={<ServiceDataPage serviceKey="inventory" />} />
+        <Route path="/mantenimiento" element={<ServiceDataPage serviceKey="maintenance" />} />
+        <Route path="/garantias" element={<ServiceDataPage serviceKey="warranties" />} />
+        <Route path="/finanzas" element={<ServiceDataPage serviceKey="expenses" />} />
+        <Route path="/obra" element={<ServiceDataPage serviceKey="site-log" />} />
 
         {/* Mi Negocio */}
         <Route path="/negocio" element={<NegocioPage />} />

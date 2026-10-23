@@ -114,8 +114,8 @@ async def test_modules_order_sub_services_and_workspaces(
     assert data["collections"]["dev_status"] == "active"
     assert data["collections"]["workspace"] is None
 
-    # Un servicio sin construir sigue en desarrollo y sin workspace
-    assert data["daily_summary"]["dev_status"] == "development"
+    # Resumen diario activo (generación + envío ya funcionan)
+    assert data["daily_summary"]["dev_status"] == "active"
     assert data["daily_summary"]["workspace"] is None
 
 

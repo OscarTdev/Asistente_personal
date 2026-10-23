@@ -1,0 +1,10 @@
+﻿{
+  "mcpServers": {
+    "asistente": {
+      "command": "C:\\Users\\juand\\OneDrive\\Desktop\\Asistente_personal\\backend\\.venv\\Scripts\\python.exe",
+      "args": [
+        "C:\\Users\\juand\\OneDrive\\Desktop\\Asistente_personal\\mcp\\server.py"
+      ]
+    }
+  }
+}
