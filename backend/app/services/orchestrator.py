@@ -2167,6 +2167,7 @@ async def handle_incoming(
     wa_id = contact.wa_id
     # El lote unificado (debounce) llega como text_override; si no, el propio
     text = (text_override or message.content or "").strip()
+    _t0 = datetime.now(UTC)  # para medir la latencia percibida por el dueño
 
     try:
         # Sin texto: solo las notas de voz del dueño piden aclaración.
