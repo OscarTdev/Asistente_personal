@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     llm_api_key: str = ""            # vacío → IA deshabilitada (no falla el arranque)
     llm_base_url: str = "https://openrouter.ai/api/v1"
     llm_model: str = "meta-llama/llama-3.1-70b-instruct"
+    # Modelo rápido para tareas simples (detección de intención): si no se
+    # define, usa llm_model. La detección es clasificación, no conversación.
+    llm_model_intent: str = ""
 
     # Evolution API (canal WhatsApp) — vacío → el bot no atiende (guard real)
     evolution_api_url: str = "http://127.0.0.1:8080"

@@ -109,8 +109,10 @@ async def detect_intent(*, tenant: Tenant, text: str) -> AssistantIntent:
             base_url=settings.llm_base_url,
             timeout=15,
         )
+        # La detección de intención es clasificación: un modelo rápido basta
+        # (si no se define llm_model_intent, cae al modelo general).
         response = await client.chat.completions.create(
-            model=settings.llm_model,
+            model=settings.llm_model_intent or settings.llm_model,
             messages=[
                 {
                     "role": "system",

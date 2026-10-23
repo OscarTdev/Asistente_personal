@@ -20,9 +20,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
 from app.core.redis import get_redis
 from app.core.security import decode_access_token
 from app.models import Tenant, User
@@ -37,13 +35,20 @@ router = APIRouter()
 async def events_socket(
     websocket: WebSocket,
     token: str = Query(...),
-    db: AsyncSession = Depends(get_db),
     redis_client: Redis = Depends(get_redis),
 ) -> None:
-    """Autentica por JWT y reenvía los eventos del canal del tenant."""
+    """Autentica por JWT y reenvía los eventos del canal del tenant.
+
+    La sesión de BD vive SOLO durante la autenticación: una conexión
+    WebSocket de larga duración no puede retener una conexión del pool
+    (con varias pestañas del panel el pool se drena y TODA la plataforma
+    se vuelve lenta). El loop posterior usa únicamente Redis.
+    """
     await websocket.accept()
 
     try:
+        from app.core.database import SessionFactory
+
         try:
             payload = decode_access_token(token)
             user_id = UUID(payload["sub"])
@@ -52,32 +57,38 @@ async def events_socket(
             await websocket.close(code=1008)
             return
 
-        result = await db.execute(select(User).where(User.id == user_id))
-        user = result.scalar_one_or_none()
-        if not user or not user.is_active:
-            logger.debug("Usuario no válido en WebSocket: %s", user_id)
-            await websocket.close(code=1008)
-            return
+        async with SessionFactory() as db:
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if not user or not user.is_active:
+                logger.debug("Usuario no válido en WebSocket: %s", user_id)
+                await websocket.close(code=1008)
+                return
 
-        result = await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))
-        tenant = result.scalar_one_or_none()
-        if not tenant or not tenant.is_active:
-            logger.debug("Tenant no válido en WebSocket: %s", user.tenant_id)
-            await websocket.close(code=1008)
-            return
+            result = await db.execute(
+                select(Tenant).where(Tenant.id == user.tenant_id)
+            )
+            tenant = result.scalar_one_or_none()
+            if not tenant or not tenant.is_active:
+                logger.debug("Tenant no válido en WebSocket: %s", user.tenant_id)
+                await websocket.close(code=1008)
+                return
+            tenant_id = user.tenant_id
+            bot_name = tenant.bot_name
+        # ── la sesión de BD ya está cerrada; el loop no la necesita ──
 
         await websocket.send_text(
             json.dumps(
                 {
                     "type": "connected",
-                    "tenant_id": str(user.tenant_id),
-                    "bot_name": tenant.bot_name,
+                    "tenant_id": str(tenant_id),
+                    "bot_name": bot_name,
                 }
             )
         )
 
         # Un socket se suscribe únicamente al canal de su tenant (aislamiento).
-        channel_name = events_channel(user.tenant_id)
+        channel_name = events_channel(tenant_id)
         pubsub = redis_client.pubsub()
         await pubsub.subscribe(channel_name)
 
