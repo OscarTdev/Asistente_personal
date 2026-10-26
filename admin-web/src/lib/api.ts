@@ -40,9 +40,15 @@
   AdminTenantDetail,
   AdminModule,
   AdminConversation,
+  AdminConversationPage,
   AdminMessage,
+  AdminMessagePage,
   CheckoutLinkResult,
   ChannelIdentity,
+  TenantUpdatePayload,
+  AdminTenantContact,
+  AdminTenantContactDetail,
+  AdminTenantContactMessagesPage,
 } from '../types'
 
 export class ApiError extends Error {
@@ -73,13 +79,22 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     },
   })
 
+  // 401: el token expiró o es inválido — cerrar sesión y volver al login.
+  // Sin esto, cada llamada fallida repetía el 401 en bucle (esqueletos eternos).
+  if (response.status === 401) {
+    localStorage.removeItem('asistente_token')
+    window.location.assign('/login')
+    throw new ApiError('Sesión expirada. Vuelve a entrar.', 401)
+  }
+
   if (!response.ok) {
     let errorMessage = 'Error desconocido'
     try {
       const errorData = await response.json()
       errorMessage = errorData.detail || errorData.message || 'Error desconocido'
-    } catch (e) {
-      // Ignore
+    } catch {
+      // Respuesta sin cuerpo JSON: usar el status como mensaje
+      errorMessage = `Error ${response.status}`
     }
     throw new ApiError(errorMessage, response.status)
   }
@@ -508,18 +523,17 @@ export function createTenantCheckoutLink(
   })
 }
 
-// â”€â”€ WhatsApp (conexiÃ³n) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-export function updateAdminTenant(
-  id: string,
-  data: { name?: string; bot_name?: string; customer_mode?: boolean }
-): Promise<TenantDetail> {
-  return apiFetch<TenantDetail>(`/admin/tenants/${id}`, {
-    method: 'PATCH',
+export function sendAdminMessageToTenant(
+  tenantId: string,
+  message: string
+): Promise<{ message_id: string }> {
+  return apiFetch<{ message_id: string }>(`/admin/tenants/${tenantId}/admin-message`, {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ message }),
   })
 }
+
 
 export function fetchWhatsappStatus(): Promise<WhatsappStatus> {
   return apiFetch<WhatsappStatus>('/whatsapp/status')
@@ -610,10 +624,18 @@ export function toggleAdminModule(
 export function fetchAdminConversations(
   tenantId: string,
   skip: number = 0,
-  limit: number = 20
-): Promise<{ items: any[]; total: number }> {
-  return apiFetch<{ items: any[]; total: number }>(
-    `/admin/tenants/${tenantId}/conversations?skip=${skip}&limit=${limit}`
+  limit: number = 20,
+  reason?: string
+): Promise<AdminConversationPage> {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  })
+  if (reason) {
+    params.set('motivo', reason)
+  }
+  return apiFetch<AdminConversationPage>(
+    `/admin/tenants/${tenantId}/conversations?${params.toString()}`
   )
 }
 
@@ -621,10 +643,21 @@ export function fetchAdminMessages(
   tenantId: string,
   conversationId: string,
   limit: number = 100
-): Promise<{ items: any[]; total: number }> {
-  return apiFetch<{ items: any[]; total: number }>(
+): Promise<AdminMessagePage> {
+  return apiFetch<AdminMessagePage>(
     `/admin/tenants/${tenantId}/conversations/${conversationId}/messages?limit=${limit}`
   )
+}
+
+export function updateAdminTenant(
+  id: string,
+  data: TenantUpdatePayload
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
 }
 
 export function addAdminPaymentMethod(
@@ -672,5 +705,55 @@ export function addAdminIdentity(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }
+  )
+}
+
+// ── Cross-tenant: contactos de cada dueño (super admin) ───────────────────────
+
+export function fetchAdminTenantContacts(
+  tenantId: string,
+  skip: number = 0,
+  limit: number = 20,
+  search?: string,
+  activeOnly: boolean = true,
+  tag?: string
+): Promise<ContactPage> {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+    active_only: String(activeOnly),
+  })
+  if (search) {
+    params.set('search', search)
+  }
+  if (tag) {
+    params.set('tag', tag)
+  }
+  return apiFetch<ContactPage>(
+    `/admin/tenants/${tenantId}/contacts?${params.toString()}`
+  )
+}
+
+export function fetchAdminTenantContact(
+  tenantId: string,
+  contactId: string
+): Promise<AdminTenantContactDetail> {
+  return apiFetch<AdminTenantContactDetail>(
+    `/admin/tenants/${tenantId}/contacts/${contactId}`
+  )
+}
+
+export function fetchAdminTenantContactMessages(
+  tenantId: string,
+  contactId: string,
+  skip: number = 0,
+  limit: number = 30
+): Promise<AdminTenantContactMessagesPage> {
+  const params = new URLSearchParams({
+    skip: String(skip),
+    limit: String(limit),
+  })
+  return apiFetch<AdminTenantContactMessagesPage>(
+    `/admin/tenants/${tenantId}/contacts/${contactId}/messages?${params.toString()}`
   )
 }

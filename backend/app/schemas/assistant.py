@@ -13,9 +13,12 @@ class AssistantIntent(BaseModel):
         "reminder", "collection", "visit_report", "maintenance",
         "warranty", "expense", "inventory", "site_log",
         "profitability", "google_email", "google_calendar",
-        "google_sheets", "google_docs", "chat",
+        "google_sheets", "google_docs", "conversation_log",
+        "web_search", "add_contact", "help", "chat",
     ] = "chat"
     contact_name: str | None = Field(default=None, max_length=100)
+    # Para add_contact: número de WhatsApp (formato flexible)
+    contact_phone: str | None = Field(default=None, max_length=20)
     message_text: str | None = Field(default=None, max_length=1000)
     # Para invoice/collection: monto y concepto
     amount: float | None = Field(default=None, ge=0)

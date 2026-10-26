@@ -39,6 +39,8 @@ from app.models import (
     User,
 )
 from app.schemas.admin import (
+    AdminMessageRequest,
+    AdminMessageResponse,
     ChannelIdentityCreate,
     ChannelIdentityOut,
     CheckoutLinkRequest,
@@ -58,6 +60,13 @@ from app.schemas.admin import (
     TenantUpdateRequest,
     TenantWhatsappUpdate,
 )
+from app.schemas.contacts import (
+    ContactDetail,
+    ContactMessage,
+    ContactMessagesPage,
+    ContactPage,
+)
+from app.services import contacts as contacts_service
 from app.services import plan_prices
 from app.services.entitlements import (
     apply_plan,
@@ -143,6 +152,11 @@ def _summary(
 
 
 async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
+    import logging
+    from datetime import UTC, datetime, timedelta
+
+    logger = logging.getLogger(__name__)
+
     sub = await _latest_subscription(db, tenant.id)
 
     modules = (
@@ -175,7 +189,52 @@ async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
         )
     ).scalar_one()
 
-    return TenantAdminDetail(
+    # Last message timestamp
+    last_msg = (
+        await db.execute(
+            select(func.max(Message.created_at))
+            .where(Message.tenant_id == tenant.id)
+        )
+    ).scalar_one_or_none()
+    logger.info("last_msg query result: %s for tenant %s", last_msg, tenant.id)
+
+    # Last quote timestamp
+    last_quote = (
+        await db.execute(
+            select(func.max(Quote.created_at))
+            .where(Quote.tenant_id == tenant.id)
+        )
+    ).scalar_one_or_none()
+    logger.info("last_quote query result: %s for tenant %s", last_quote, tenant.id)
+
+    # Total quotes amount
+    total_quotes = (
+        await db.execute(
+            select(func.coalesce(func.sum(Quote.total), 0))
+            .where(Quote.tenant_id == tenant.id)
+        )
+    ).scalar_one()
+    logger.info("total_quotes query result: %s for tenant %s", total_quotes, tenant.id)
+
+    # Quotes in last 30 days
+    thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
+    quotes_last_30d = (
+        await db.execute(
+            select(func.count())
+            .select_from(Quote)
+            .where(Quote.tenant_id == tenant.id, Quote.created_at >= thirty_days_ago)
+        )
+    ).scalar_one()
+    logger.info("quotes_last_30d query result: %s for tenant %s", quotes_last_30d, tenant.id)
+
+    # Active services (enabled modules that are 'active' dev status)
+    active_services = [
+        tm.module_key for tm in modules
+        if tm.is_enabled and module_dev_status(tm.module_key) == "active"
+    ]
+    logger.info("active_services: %s", active_services)
+
+    result = TenantAdminDetail(
         **_summary(
             tenant, sub=sub, enabled_modules=enabled_modules, counts=counts
         ).model_dump(),
@@ -194,7 +253,21 @@ async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
         ],
         payment_methods=list(payment_methods),
         subscription=sub,
+        last_message_at=last_msg,
+        last_quote_at=last_quote,
+        total_quotes_amount=float(total_quotes) if total_quotes else 0.0,
+        quotes_last_30d=quotes_last_30d,
+        active_services=active_services,
     )
+    logger.info(
+        "Returning result with last_msg=%s, last_quote=%s, total=%s, q30d=%s, active=%s",
+        result.last_message_at,
+        result.last_quote_at,
+        result.total_quotes_amount,
+        result.quotes_last_30d,
+        result.active_services,
+    )
+    return result
 
 
 # ── Tenants ─────────────────────────────────────────────────────────────────
@@ -257,7 +330,7 @@ async def get_tenant(
     tenant_id: UUID,
     current_user: User = Depends(require_platform_admin),
     db: AsyncSession = Depends(get_db),
-) -> TenantAdminDetail:
+):
     """Detalle de un cliente: servicios, métodos de pago y suscripción."""
     tenant = await _get_tenant_or_404(db, tenant_id)
     return await _tenant_detail(db, tenant)
@@ -705,6 +778,140 @@ async def create_tenant_checkout_link(
         plan="premium",
         price_cop=price,
         whatsapp_sent=whatsapp_sent,
+    )
+
+
+# ── Mensaje del admin al negocio ────────────────────────────────────────────
+
+
+@router.post(
+    "/tenants/{tenant_id}/admin-message", response_model=AdminMessageResponse
+)
+async def send_admin_message(
+    tenant_id: UUID,
+    body: AdminMessageRequest,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> AdminMessageResponse:
+    """Envía un mensaje del admin de la plataforma al negocio por WhatsApp.
+
+    Útil para notificaciones, avisos de mantenimiento, cobros manuales, etc.
+    El mensaje se envía al WhatsApp registrado del dueño (tenant.wa_id).
+    """
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    if not tenant.wa_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El negocio no tiene WhatsApp registrado",
+        )
+
+    channel = get_channel("evolution")
+    msg_id = await channel.send_text(
+        tenant.wa_id,
+        f"📢 *Mensaje del equipo de Aura*\n\n{body.message}\n\n— Equipo de soporte",
+    )
+
+    # Log en auditoría
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="admin_message",
+        tenant_id=tenant.id,
+        object_ref=f"to:{tenant.wa_id}",
+    )
+    await db.commit()
+
+    return AdminMessageResponse(message_id=msg_id or "sent")
+
+
+# ── Cross-tenant: contactos de cada dueño (super admin) ─────────────────────
+# Permite al super admin ver los CRM de todos los tenants (dueños del bot)
+
+
+@router.get(
+    "/tenants/{tenant_id}/contacts", response_model=ContactPage
+)
+async def admin_list_tenant_contacts(
+    tenant_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    search: str | None = Query(None, max_length=100),
+    active_only: bool = Query(True),
+    tag: str | None = Query(None, max_length=30),
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ContactPage:
+    """Lista los contactos de un tenant específico (para super admin)."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    items, total = await contacts_service.list_contacts(
+        db,
+        tenant_id=tenant.id,
+        skip=skip,
+        limit=limit,
+        search=search,
+        active_only=active_only,
+        tag=tag,
+    )
+    return ContactPage(items=items, total=total, skip=skip, limit=limit)
+
+
+@router.get(
+    "/tenants/{tenant_id}/contacts/{contact_id}", response_model=ContactDetail
+)
+async def admin_get_tenant_contact(
+    tenant_id: UUID,
+    contact_id: UUID,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ContactDetail:
+    """Detalle de un contacto de un tenant (para super admin)."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    detail = await contacts_service.get_contact(
+        db, tenant_id=tenant.id, contact_id=contact_id
+    )
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado",
+        )
+    return detail
+
+
+@router.get(
+    "/tenants/{tenant_id}/contacts/{contact_id}/messages",
+    response_model=ContactMessagesPage,
+)
+async def admin_list_tenant_contact_messages(
+    tenant_id: UUID,
+    contact_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> ContactMessagesPage:
+    """Mensajes de un contacto de un tenant (para super admin)."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+    result = await contacts_service.list_contact_messages(
+        db,
+        tenant_id=tenant.id,
+        contact_id=contact_id,
+        skip=skip,
+        limit=limit,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cliente no encontrado",
+        )
+    messages, total = result
+    return ContactMessagesPage(
+        items=[ContactMessage.model_validate(m) for m in messages],
+        total=total,
+        skip=skip,
+        limit=limit,
     )
 
 

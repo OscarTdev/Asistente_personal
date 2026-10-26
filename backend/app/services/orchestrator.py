@@ -75,40 +75,64 @@ async def _load_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
     return branding.logo_bytes if branding else None
 
 
-_SYSTEM_PROMPT = """Eres {bot_name}, el asistente personal de WhatsApp de {tenant_name} (un negocio de oficios en Colombia). Le hablas al DUEÑO del negocio: es tu jefe.
+_SYSTEM_PROMPT = (
+    "Eres {bot_name}, el asistente personal de WhatsApp de "
+    "{tenant_name}, un negocio de oficios en Colombia. Le hablas al DUEÑO del "
+    "negocio: es tu jefe.\n\n"
+    "QUÉ PUEDES HACER (tienes acceso REAL a los datos del negocio):\n"
+    "- Cotizar con el catálogo de precios del negocio y generar el PDF "
+    "(COT-0001).\n"
+    "- Recordatorios: crearlos, listarlos («qué recordatorios tengo») y "
+    "cancelarlos («cancela el recordatorio de X»).\n"
+    "- Notas por texto o voz, buscarlas y borrarlas.\n"
+    "- Contactos del negocio (CRM): SÍ tienes acceso — puedes buscarlos y "
+    "escribirles de su parte.\n"
+    "- Ver historial de conversaciones: «historial con Juan», «qué hablé con "
+    "María», «últimas conversaciones».\n"
+    "- Cuentas de cobro (CC), cobros con link de MercadoPago, informes de "
+    "visita (IV), garantías, mantenimientos preventivos, bitácora de obra, "
+    "gastos, inventario y rentabilidad por obra.\n"
+    "- Finanzas personales: registra ingresos («cobré 500 mil a Juliana») "
+    "y gastos («gasté 45 mil en cable»), y consulta tu cartera "
+    "(«cuánto tengo»).\n"
+    "- Buscar en internet: si te piden información externa (precios del "
+    "mercado, horarios, normatividad, qué hay en una página), diles que "
+    "escriban «busca en internet [tema]» o pásales el enlace y lo abres.\n"
+    "- Google (si el dueño conectó su cuenta): su correo, su agenda, hojas "
+    "de cálculo e informes en Docs.\n\n"
+    "CÓMO RESPONDES:\n"
+    "- SIEMPRE en español colombiano: cálido, breve, estilo WhatsApp "
+    "(1-3 líneas).\n"
+    "- NUNCA muestres tu razonamiento interno: responde directo al "
+    "dueño, su mensaje va tal cual a WhatsApp.\n"
+    "- Una sola pregunta a la vez.\n"
+    "- NUNCA inventes precios ni promesas: los precios salen del catálogo.\n"
+    "- Si te preguntan qué puedes hacer o quién eres, responde natural con "
+    "un resumen breve (4-6 líneas) de la lista de arriba.\n"
+    "- Si te preguntan si tienes acceso a algo (contactos, correo, agenda, "
+    "historial), responde con la verdad según la lista.\n"
+    "- Si el dueño te corrige (ej: «me llamo Oscar»), discúlpate una vez, "
+    "breve, y usa el nombre correcto en adelante.\n"
+    "- No ofrezcas servicios que no existen; si piden algo fuera de tu "
+    "alcance, dilo claro y ofrece tomarle el mensaje."
+)
 
-QUÉ PUEDES HACER (tienes acceso REAL a los datos del negocio):
-- Cotizar con el catálogo de precios del negocio y generar el PDF (COT-0001).
-- Recordatorios: crearlos, listarlos («qué recordatorios tengo») y cancelarlos («cancela el recordatorio de X»).
-- Notas por texto o voz, buscarlas y borrarlas.
-- Contactos del negocio (CRM): SÍ tienes acceso — puedes buscarlos y escribirles de su parte.
-- Cuentas de cobro (CC), cobros con link de MercadoPago, informes de visita (IV), garantías, mantenimientos preventivos, bitácora de obra, gastos, inventario y rentabilidad por obra.
-- Google (si el dueño conectó su cuenta): su correo, su agenda, hojas de cálculo e informes en Docs.
-
-CÓMO RESPONDES:
-- SIEMPRE en español colombiano: cálido, breve, estilo WhatsApp (1-3 líneas).
-- Una sola pregunta a la vez.
-- NUNCA inventes precios ni promesas: los precios salen del catálogo.
-- Si te preguntan qué puedes hacer o quién eres, responde natural con un resumen breve (4-6 líneas) de la lista de arriba.
-- Si te preguntan si tienes acceso a algo (contactos, correo, agenda), responde con la verdad según la lista.
-- Si el dueño te corrige (ej: «me llamo Oscar»), discúlpate una vez, breve, y usa el nombre correcto en adelante.
-- No ofrezcas servicios que no existen; si piden algo fuera de tu alcance, dilo claro y ofrece tomarle el mensaje.
-"""
-
-_CUSTOMER_PROMPT = """Eres {bot_name}, el asistente de WhatsApp de {tenant_name} \
-(negocio de oficios en Colombia).
-Atiendes a los clientes del negocio: mensajes cortos, cálidos y profesionales.
-
-REGLAS:
-- Responde SIEMPRE en español, tono cercano, estilo WhatsApp: una sola
-  pregunta o idea por mensaje.
-- NUNCA inventes precios, plazos ni promesas: los precios salen del
-  catálogo del negocio y solo se comparten en una cotización formal.
-- Si no sabes algo, si el cliente se queja o pide algo delicado, dile con
-  naturalidad que lo conectas con el dueño y avísale por dentro.
-- No menciones datos de otros clientes ni asumas información que no te dieron.
-- Aclara que eres un asistente automático si te lo preguntan.
-"""
+_CUSTOMER_PROMPT = (
+    "Eres {bot_name}, el asistente de WhatsApp de {tenant_name} "
+    "(negocio de oficios en Colombia).\n"
+    "Atiendes a los clientes del negocio: mensajes cortos, cálidos y "
+    "profesionales.\n\n"
+    "REGLAS:\n"
+    "- Responde SIEMPRE en español, tono cercano, estilo WhatsApp: una sola "
+    "pregunta o idea por mensaje.\n"
+    "- NUNCA inventes precios, plazos ni promesas: los precios salen del "
+    "catálogo del negocio y solo se comparten en una cotización formal.\n"
+    "- Si no sabes algo, si el cliente se queja o pide algo delicado, dile "
+    "con naturalidad que lo conectas con el dueño y avísale por dentro.\n"
+    "- No menciones datos de otros clientes ni asumas información que no te "
+    "dieron.\n"
+    "- Aclara que eres un asistente automático si te lo preguntan."
+)
 
 
 async def _quoter_enabled(db: AsyncSession, tenant_id: UUID) -> bool:
@@ -157,6 +181,113 @@ async def _conversation_history(
     return messages
 
 
+async def _handle_conversation_log(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """El dueño pide ver el historial de conversaciones con un contacto
+    o listar sus conversaciones recientes."""
+    from app.services.chat_utils import _resolve_contact_by_name
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db,
+            tenant_id=tenant.id,
+            conversation=conversation,
+            channel=channel,
+            wa_id=wa_id,
+            text=msg,
+        )
+
+    name = (intent.contact_name or "").strip()
+
+    if name:
+        # Historial con un contacto específico
+        matches = await _resolve_contact_by_name(db, tenant_id=tenant.id, name=name)
+        if not matches:
+            await tell_owner(f"No encontré a nadie llamado «{name}» en tus contactos.")
+            return
+        if len(matches) > 1:
+            names = ", ".join(c.name or c.wa_id for c in matches[:5])
+            await tell_owner(f"Encontré varios: {names}. ¿Con cuál quieres ver el historial?")
+            return
+
+        target = matches[0]
+        # Buscar la conversación más reciente con ese contacto
+        target_conv = (
+            await db.execute(
+                select(Conversation)
+                .where(Conversation.contact_id == target.id)
+                .order_by(
+                    Conversation.last_message_at.desc().nullslast(),
+                    Conversation.id.desc(),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+        if not target_conv:
+            await tell_owner(f"Todavía no hay conversación con {target.name or target.wa_id}.")
+            return
+
+        messages = await _conversation_history(db, target_conv.id, limit=15)
+        if not messages:
+            await tell_owner(f"La conversación con {target.name or target.wa_id} está vacía.")
+            return
+
+        # Formatear historial
+        lines = [f"💬 Historial con {target.name or target.wa_id} (últimos {len(messages)}):"]
+        for m in messages:
+            prefix = "👤" if m.direction == "in" else "🤖"
+            content = m.content or "<archivo>"
+            if len(content) > 120:
+                content = content[:117] + "..."
+            lines.append(f"{prefix} {content}")
+
+        await tell_owner("\n".join(lines))
+    else:
+        # Listar últimas conversaciones del negocio
+        convs = (
+            await db.execute(
+                select(Conversation)
+                .where(Conversation.tenant_id == tenant.id)
+                .order_by(
+                    Conversation.last_message_at.desc().nullslast(),
+                    Conversation.id.desc(),
+                )
+                .limit(10)
+            )
+        ).scalars().all()
+
+        if not convs:
+            await tell_owner("Todavía no tienes conversaciones registradas.")
+            return
+
+        # Obtener nombres de contactos
+        contact_ids = [c.contact_id for c in convs]
+        contacts = (
+            await db.execute(
+                select(Contact).where(Contact.id.in_(contact_ids))
+            )
+        ).scalars().all()
+        contacts_by_id = {c.id: c for c in contacts}
+
+        lines = ["📋 Tus últimas conversaciones:"]
+        for c in convs:
+            contact = contacts_by_id.get(c.contact_id)
+            cname = contact.name if contact else contact.wa_id if contact else "Desconocido"
+            status_emoji = "🟢" if c.status == "open" else "⚪"
+            last = f" · {c.last_message_at.strftime('%d/%m %H:%M')}" if c.last_message_at else ""
+            lines.append(f"{status_emoji} {cname}{last}")
+
+        await tell_owner("\n".join(lines))
+
+
 async def _handle_send_message(
     db: AsyncSession,
     *,
@@ -195,7 +326,8 @@ async def _handle_send_message(
     if not matches:
         await ask_owner(
             f"No encontré a nadie llamado «{name}» en tus contactos. "
-            "¿Me confirmas el nombre?"
+            "Si es nuevo, agrégalo con "
+            "«agrega a [nombre] con número [celular]» y luego le escribo."
         )
         return
     if len(matches) > 1:
@@ -484,6 +616,7 @@ async def _handle_maintenance(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
     """Mantenimiento preventivo: programar avisos recurrentes (spec §13).
 
@@ -499,8 +632,13 @@ async def _handle_maintenance(
         )
 
     # ¿Es consulta o programación?
-    text_lower = (intent.message_text or "").lower()
-    query_words = ("qué mantenimientos", "que mantenimientos", "mis mantenimientos")
+    text_lower = " ".join(
+        p for p in (text, intent.message_text) if p
+    ).lower()
+    query_words = (
+        "qué mantenimientos", "que mantenimientos", "mis mantenimientos",
+        "mantenimientos tengo", "qué mantenimientos tengo",
+    )
     if any(w in text_lower for w in query_words):
         # Listar mantenimientos activos
         from sqlalchemy import select as sel
@@ -594,6 +732,7 @@ async def _handle_warranty(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
     """Garantías: registrar qué se instaló y consultar las vigentes (spec §13).
 
@@ -606,10 +745,14 @@ async def _handle_warranty(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
-    text_lower = (intent.message_text or "").lower()
+    text_lower = " ".join(
+        p for p in (text, intent.message_text) if p
+    ).lower()
     query_words = (
         "qué garantías", "que garantías", "mis garantías",
         "garantías vigentes", "garantias vigentes",
+        "que garantias", "mis garantias", "garantias tengo",
+        "garantías tengo", "qué garantias",
     )
     if any(w in text_lower for w in query_words):
         # Listar garantías activas
@@ -707,6 +850,7 @@ async def _handle_site_log(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
     """Bitácora de obra: abrir, registrar avance, consultar y cerrar (spec §13).
 
@@ -730,7 +874,9 @@ async def _handle_site_log(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
-    text_lower = (intent.message_text or "").lower()
+    text_lower = " ".join(
+        p for p in (text, intent.message_text) if p
+    ).lower()
 
     # Consultar obras abiertas
     open_words = ("qué obras", "que obras", "mis obras", "obras abiertas")
@@ -859,7 +1005,6 @@ async def _handle_profitability(
     from sqlalchemy import func
 
     from app.models import Expense, Quote
-    from app.services.expenses import _format_cop
 
     async def tell_owner(msg: str) -> None:
         await _send_out_message(
@@ -906,8 +1051,10 @@ async def _handle_profitability(
     total_quoted = sum((q.total or D("0")) for q in quotes)
     total_expenses = (
         await db.execute(
-            select(func.sum(Expense.amount))
-            .where(Expense.tenant_id == tenant.id)
+            select(func.sum(Expense.amount)).where(
+                Expense.tenant_id == tenant.id,
+                Expense.type == "expense",
+            )
         )
     ).scalar() or D("0")
 
@@ -932,6 +1079,7 @@ async def _handle_inventory(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
     """Inventario de materiales: registrar, consultar y descontar (spec §13).
 
@@ -950,7 +1098,9 @@ async def _handle_inventory(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
-    text_lower = (intent.message_text or "").lower()
+    text_lower = " ".join(
+        p for p in (text, intent.message_text) if p
+    ).lower()
 
     # Consultar
     query_words = (
@@ -1029,16 +1179,21 @@ async def _handle_expense(
     conversation: Conversation,
     wa_id: str,
     intent: AssistantIntent,
+    text: str = "",
 ) -> None:
-    """Finanzas personales: registrar gastos y resumen mensual (spec §13).
+    """Finanzas personales: ingresos, gastos y cartera (spec §13 + adendo).
 
-    «gasté 45 mil en cable» → categoría auto-detectada + registro
-    «cuánto he gastado este mes» → resumen por categoría
+    «gasté 45 mil en cable» → gasto con categoría auto-detectada
+    «cobré 500 mil a Juliana» → ingreso
+    «cuánto he gastado este mes» → resumen de gastos por categoría
+    «cuánto tengo» / «mi cartera» / «balance» → balance de cartera
     """
     from app.services.expenses import (
         _format_cop,
+        get_wallet_balance,
         monthly_summary,
-        record_expense,
+        record_income,
+        record_movement,
     )
 
     async def tell_owner(msg: str) -> None:
@@ -1047,36 +1202,86 @@ async def _handle_expense(
             channel=channel, wa_id=wa_id, text=msg,
         )
 
-    # ¿Consulta o registro?
-    text_lower = (intent.message_text or "").lower()
+    # ¿Consulta de cartera / balance? (mensaje original o extraído)
+    text_lower = " ".join(
+        part for part in (text, intent.message_text) if part
+    ).lower()
+    wallet_words = (
+        "cuánto tengo", "cuanto tengo", "mi cartera", "balance",
+        "cuánto hay en mi cartera", "mi balance", "cuánto es mi cartera",
+    )
+    if any(w in text_lower for w in wallet_words):
+        wallet = await get_wallet_balance(db, tenant_id=tenant.id)
+        await tell_owner(
+            f"💰 Cartera:\n"
+            f"Ingresos: {_format_cop(wallet['total_income'])}\n"
+            f"Gastos: {_format_cop(wallet['total_expenses'])}\n"
+            f"Balance: {_format_cop(wallet['balance'])}"
+        )
+        return
+
+    # ¿Consulta de gastos del mes?
     query_words = (
         "cuánto he gastado", "cuanto he gastado", "resumen de gastos",
         "mis gastos", "cuánto he gastado este mes", "resumen del mes",
-        "cuanto he gastado este mes", "cuánto he gastado", "gastos del mes",
+        "cuanto he gastado este mes", "gastos del mes",
     )
     if any(w in text_lower for w in query_words):
         summary = await monthly_summary(db, tenant_id=tenant.id)
-        if summary["total"] == 0:
+        if summary["total"] == 0 and summary["total_income"] == 0:
             await tell_owner(
-                "No tienes gastos registrados este mes. "
-                "Dime «gasté [monto] en [qué]» para empezar."
+                "No tienes movimientos este mes. "
+                "Dime «gasté [monto] en [qué]» o «cobré [monto]»."
             )
             return
 
-        lines = [f"📊 Gastos de {summary['month']}:\n"]
-        lines.append(f"TOTAL: {_format_cop(summary['total'])}\n")
-        for category, data in summary["categories"].items():
-            cat_total = data["total"]
-            lines.append(
-                f"• {category.title()}: {_format_cop(cat_total)} "
-                f"({data['count']} gasto{'s' if data['count'] > 1 else ''})"
-            )
+        lines = [f"📊 Finanzas de {summary['month']}:\n"]
+        if summary["total_income"] > 0:
+            lines.append(f"INGRESOS: {_format_cop(summary['total_income'])}")
+        if summary["total"] > 0:
+            lines.append(f"GASTOS: {_format_cop(summary['total'])}")
+        lines.append(f"NETO: {_format_cop(summary['net'])}\n")
+        if summary["categories"]:
+            lines.append("Gastos por categoría:")
+            for category, data in summary["categories"].items():
+                lines.append(
+                    f"• {category.title()}: {_format_cop(data['total'])} "
+                    f"({data['count']} gasto{'s' if data['count'] > 1 else ''})"
+                )
         await tell_owner("\n".join(lines))
         return
 
-    # Registrar gasto
+    # Registrar movimiento (ingreso o gasto)
     if intent.amount is None or intent.amount <= 0:
-        await tell_owner("¿Cuánto gastaste? Dime el monto (ej: 45000)")
+        await tell_owner("¿Cuánto? Dime el monto (ej: 45000)")
+        return
+
+    from decimal import Decimal as D
+
+    amount = D(str(int(intent.amount)))
+
+    # ¿Ingreso o gasto? El router de intención no lo distingue:
+    # se detecta con el mensaje ORIGINAL del dueño (no solo el
+    # description extraído, que puede perder palabras clave).
+    from app.services.expenses import detect_type
+    full_text = " ".join(
+        part for part in (text, intent.description, intent.message_text) if part
+    )
+    mov_type = detect_type(full_text)
+
+    if mov_type == "income":
+        description = (intent.description or "Ingreso").strip()
+        if not description or description == "Ingreso":
+            description = (intent.message_text or "Ingreso").strip()[:200]
+        expense = await record_income(
+            db, tenant_id=tenant.id,
+            description=description,
+            amount=amount,
+        )
+        await tell_owner(
+            f"💵 Ingreso registrado: {_format_cop(amount)} en "
+            f"**{expense.category}**\n\n{description}"
+        )
         return
 
     description = (intent.description or "Gasto").strip()
@@ -1084,12 +1289,11 @@ async def _handle_expense(
         await tell_owner("¿En qué lo gastaste? (ej: cable, gasolina, almuerzo)")
         return
 
-    from decimal import Decimal as D
-    amount = D(str(int(intent.amount)))
-    expense = await record_expense(
+    expense = await record_movement(
         db, tenant_id=tenant.id,
         description=description,
         amount=amount,
+        mov_type="expense",
     )
     await tell_owner(
         f"💸 Gasto registrado: {_format_cop(amount)} en "
@@ -1361,11 +1565,24 @@ async def _handle_confirmation(
         return False
 
     lowered = text.lower().strip()
+    import re
+    from datetime import timedelta
+
+    # Una confirmación vieja no debe dispararse con un «ok» casual días después
+    if pending.created_at and (
+        datetime.now(UTC) - pending.created_at > timedelta(hours=24)
+    ):
+        pending.status = "expired"
+        await db.commit()
+        return False
+
+    # Palabras completas: «no» no debe activarse dentro de «nota» o «número»
+    tokens = set(re.findall(r"[a-záéíóúñü]+", lowered))
     yes_words = ("si", "sí", "dale", "ok", "claro", "envía", "envia",
                  "mánda", "manda", "confirmo", "listo", "seguro", "puedes")
     no_words = ("no", "después", "despues", "luego", "cancela", "espera", "nuevo")
 
-    if any(word in lowered for word in no_words):
+    if tokens & set(no_words):
         pending.status = "cancelled"
         await db.commit()
         await _send_out_message(
@@ -1375,7 +1592,7 @@ async def _handle_confirmation(
         )
         return True
 
-    if any(word in lowered for word in yes_words):
+    if tokens & set(yes_words):
         pending.status = "confirmed"
         await db.commit()
 
@@ -1385,15 +1602,31 @@ async def _handle_confirmation(
             contact_id = UUID(payload["contact_id"])
 
             quote = (
-                await db.execute(select(Quote).where(Quote.id == quote_id))
+                await db.execute(
+                    select(Quote).where(
+                        Quote.id == quote_id, Quote.tenant_id == tenant.id
+                    )
+                )
             ).scalar_one_or_none()
             target_contact = (
                 await db.execute(
-                    select(Contact).where(Contact.id == contact_id)
+                    select(Contact).where(
+                        Contact.id == contact_id, Contact.tenant_id == tenant.id
+                    )
                 )
             ).scalar_one_or_none()
             if quote is None or target_contact is None:
-                return False
+                pending.status = "failed"
+                await db.commit()
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id,
+                    text=(
+                        "No pude enviar la cotización: ya no encuentro la "
+                        "cotización o el contacto. Revísalo en el panel."
+                    ),
+                )
+                return True
 
             tenant_orm = (
                 await db.execute(select(Tenant).where(Tenant.id == tenant.id))
@@ -1472,7 +1705,7 @@ async def _handle_confirmation(
 
             target_contact = (
                 await db.execute(
-                    select(Contact).where(Contact.id == contact_id)
+                    select(Contact).where(Contact.id == contact_id, Contact.tenant_id == tenant.id)
                 )
             ).scalar_one_or_none()
             if target_contact is None:
@@ -1480,7 +1713,11 @@ async def _handle_confirmation(
 
             doc = (
                 await db.execute(
-                    select(Document).where(Document.number == doc_number)
+                    select(Document).where(
+                        Document.tenant_id == tenant.id,
+                        Document.doc_type == "invoice",
+                        Document.number == doc_number,
+                    )
                 )
             ).scalar_one_or_none()
             if doc is None:
@@ -1829,6 +2066,643 @@ async def _handle_quote(
         await db.commit()
 
 
+async def _handle_support(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+) -> None:
+    """Maneja solicitudes de soporte: reenvía el mensaje al admin de la plataforma."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    admin_wa_id = getattr(settings, 'admin_support_wa_id', None) or "3043223100"
+
+    # Mensaje para el admin
+    support_msg = (
+        f"🆘 *SOPORTE - {tenant.name}*\n"
+        f"Negocio: {tenant.name} (slug: {tenant.slug})\n"
+        f"Dueño WhatsApp: {wa_id}\n"
+        f"Plan: {tenant.plan}\n"
+        f"Motivo: {intent.message_text or '(sin detalles)'}"
+    )
+
+    try:
+        await channel.send_text(admin_wa_id, support_msg)
+    except Exception:
+        logger.exception("No se pudo enviar mensaje de soporte al admin")
+
+    # Confirmar al dueño
+    await _send_out_message(
+        db,
+        tenant_id=tenant.id,
+        conversation=conversation,
+        channel=channel,
+        wa_id=wa_id,
+        text="✅ Tu solicitud de soporte ha sido enviada al equipo. Te contactaremos pronto.",
+    )
+
+    logger.info("Soporte enviado al admin para tenant %s", tenant.id)
+
+
+# ── Gestión de servicios por chat ──────────────────────────────────────────
+
+
+async def _handle_manage_services(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Gestiona servicios del tenant: listar, activar, desactivar.
+
+    El dueño dice: "activa recordatorios", "desactiva cobro de cartera",
+    "qué servicios tengo", "lista mis servicios".
+    """
+    from app.core.modules_registry import (
+        AVAILABLE_MODULES,
+        MODULES_BY_KEY,
+        module_dev_status,
+        module_parent,
+    )
+    from app.services.entitlements import module_allowed
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    # Obtener módulos ya creados para este tenant
+    existing = {
+        tm.module_key: tm
+        for tm in (
+            await db.execute(
+                select(TenantModule).where(TenantModule.tenant_id == tenant.id)
+            )
+        ).scalars()
+    }
+
+    # Acción: enable / disable / list
+    action = (intent.message_text or "").strip().lower()
+    service_name = (intent.description or intent.contact_name or "").strip().lower()
+
+    # Normalizar nombres comunes a keys
+    name_to_key = {
+        "cotizador": "quoter",
+        "cotizaciones": "quoter",
+        "seguimiento": "follow_up",
+        "seguimiento de cotizaciones": "follow_up",
+        "cobro": "collections",
+        "cobro de cartera": "collections",
+        "cartera": "collections",
+        "informe": "visit_report",
+        "informe de visita": "visit_report",
+        "visita": "visit_report",
+        "mantenimiento": "maintenance",
+        "mantenimiento preventivo": "maintenance",
+        "obra": "site_log",
+        "seguimiento de obra": "site_log",
+        "bitácora": "site_log",
+        "inventario": "inventory",
+        "materiales": "inventory",
+        "rentabilidad": "profitability",
+        "garantías": "warranties",
+        "garantias": "warranties",
+        "recordatorios": "reminders",
+        "recordatorios y agenda": "reminders",
+        "agenda": "reminders",
+        "contactos": "crm",
+        "crm": "crm",
+        "clientes": "crm",
+        "notas": "voice_notes",
+        "notas por voz": "voice_notes",
+        "voz": "voice_notes",
+        "resumen diario": "daily_summary",
+        "resumen": "daily_summary",
+        "correo": "email_calendar",
+        "calendario": "email_calendar",
+        "google": "email_calendar",
+        "finanzas": "personal_finance",
+        "finanzas personales": "personal_finance",
+        "búsqueda": "web_search",
+        "buscar": "web_search",
+        "internet": "web_search",
+    }
+
+    service_key = name_to_key.get(service_name, service_name)
+
+    # Si es sub-servicio, redirigir al padre
+    if service_key in module_parent:
+        parent = module_parent[service_key]
+        await tell_owner(
+            f"Ese servicio vive dentro de **{MODULES_BY_KEY[parent]['name']}**. "
+            f"Dime «activa {MODULES_BY_KEY[parent]['name'].lower()}» para usarlo."
+        )
+        return
+
+    if action in ("list", "lista", "qué", "que", "ver"):
+        # Listar servicios con su estado
+        lines = ["📦 **Tus servicios:**\n"]
+        for m in AVAILABLE_MODULES:
+            if module_dev_status(m["key"]) != "active":
+                continue
+            tm = existing.get(m["key"])
+            enabled = tm.is_enabled if tm else False
+            # Verificar si el plan lo permite
+            allowed = await module_allowed(db, plan=tenant.plan, module_key=m["key"])
+            status = "🟢" if enabled else ("⚪" if allowed else "🔴")
+            lines.append(f"{status} {m['name']}")
+        lines.append("\n🟢 = activo · ⚪ = disponible (tu plan lo permite) · 🔴 = no incluido en tu plan")
+        lines.append("\nPara activar: «activa [nombre]» · Para desactivar: «desactiva [nombre]»")
+        await tell_owner("\n".join(lines))
+        return
+
+    if not service_key:
+        await tell_owner(
+            "¿Qué servicio? Dime el nombre: "
+            "«activa recordatorios», «desactiva cobro», «qué servicios tengo»..."
+        )
+        return
+
+    # Verificar que el servicio existe
+    if service_key not in MODULES_BY_KEY:
+        await tell_owner(f"No conozco el servicio «{service_name}». Dime «qué servicios tengo» para ver la lista.")
+        return
+
+    # Verificar si el plan lo permite
+    allowed = await module_allowed(db, plan=tenant.plan, module_key=service_key)
+    if not allowed:
+        await tell_owner(
+            f"⚠️ **{MODULES_BY_KEY[service_key]['name']}** no está incluido en tu plan **{tenant.plan}**.\n"
+            "Actualiza a Premium desde el panel para desbloquearlo."
+        )
+        return
+
+    if action in ("enable", "activa", "enciende", "prende", "activa"):
+        # Activar
+        tm = existing.get(service_key)
+        if tm and tm.is_enabled:
+            await tell_owner(f"✅ **{MODULES_BY_KEY[service_key]['name']}** ya está activo.")
+            return
+        if tm:
+            tm.is_enabled = True
+        else:
+            m = MODULES_BY_KEY[service_key]
+            db.add(TenantModule(
+                tenant_id=tenant.id,
+                module_key=service_key,
+                name=m["name"],
+                description=m["description"],
+                category=m["category"],
+                is_enabled=True,
+            ))
+        await db.commit()
+        await tell_owner(f"✅ **{MODULES_BY_KEY[service_key]['name']}** activado. Ya puedes usarlo.")
+        return
+
+    if action in ("disable", "desactiva", "apaga", "apagar", "desactiva"):
+        # Desactivar
+        tm = existing.get(service_key)
+        if tm is None or not tm.is_enabled:
+            await tell_owner(f"⚪ **{MODULES_BY_KEY[service_key]['name']}** ya está inactivo.")
+            return
+        tm.is_enabled = False
+        await db.commit()
+        await tell_owner(f"⏸️ **{MODULES_BY_KEY[service_key]['name']}** desactivado.")
+        return
+
+    await tell_owner(
+        "No entendí la acción. Usa: "
+        "«activa [servicio]», «desactiva [servicio]» o «qué servicios tengo»."
+    )
+
+
+# ── Sincronizar contactos de Google ────────────────────────────────────────
+
+
+async def _handle_sync_contacts(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Sincroniza contactos de Google People API al CRM del tenant.
+
+    «sincroniza contactos de google» / «importa mis contactos de google»
+    → trae los contactos con nombre y teléfono, crea/actualiza en el CRM.
+    """
+    from googleapiclient.errors import HttpError
+
+    from app.services.google_actions import _build_people_service
+    from app.services.google_oauth import get_google_credentials
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    # Verificar conexión Google
+    creds = await get_google_credentials(db, tenant_id=tenant.id)
+    if creds is None:
+        await tell_owner(
+            "🔗 Aún no has conectado tu cuenta de Google. Hazlo desde "
+            "el panel (Mi negocio → Conectar Google) y luego dime "
+            "«sincroniza contactos de google»."
+        )
+        return
+
+    await tell_owner("🔄 Sincronizando contactos de Google… esto puede tardar un momento.")
+
+    try:
+        service = _build_people_service(creds)
+        # Obtener contactos con nombre y teléfono
+        results = service.people().connections().list(
+            resourceName="people/me",
+            pageSize=500,
+            personFields="names,phoneNumbers,emailAddresses",
+        ).execute()
+
+        connections = results.get("connections", [])
+        if not connections:
+            await tell_owner("No encontré contactos en tu cuenta de Google.")
+            return
+
+        created = 0
+        updated = 0
+        skipped = 0
+
+        for person in connections:
+            names = person.get("names", [])
+            phones = person.get("phoneNumbers", [])
+            emails = person.get("emailAddresses", [])
+
+            if not names or not phones:
+                skipped += 1
+                continue
+
+            name = names[0].get("displayName", "").strip()
+            if not name:
+                skipped += 1
+                continue
+
+            # Tomar el primer teléfono
+            phone = phones[0].get("value", "").strip()
+            if not phone:
+                skipped += 1
+                continue
+
+            # Normalizar teléfono (solo dígitos)
+            import re as _re
+            digits = _re.sub(r"\D", "", phone)
+            if len(digits) == 10:
+                digits = "57" + digits
+            if len(digits) < 10 or len(digits) > 15 or not digits.isdigit():
+                skipped += 1
+                continue
+
+            email = emails[0].get("value", "").strip() if emails else None
+
+            # Verificar si existe
+            existing = (
+                await db.execute(
+                    select(Contact).where(
+                        Contact.tenant_id == tenant.id,
+                        Contact.wa_id == digits,
+                    )
+                )
+            ).scalar_one_or_none()
+
+            if existing:
+                # Actualizar nombre y email si cambió
+                changed = False
+                if existing.name != name:
+                    existing.name = name[:100]
+                    changed = True
+                if email and existing.email != email:
+                    existing.email = email
+                    changed = True
+                if changed:
+                    updated += 1
+            else:
+                # Crear nuevo
+                contact = Contact(
+                    tenant_id=tenant.id,
+                    wa_id=digits,
+                    name=name[:100],
+                    email=email,
+                    notes="Importado de Google Contacts",
+                )
+                db.add(contact)
+                await db.flush()
+                conv = Conversation(
+                    tenant_id=tenant.id, contact_id=contact.id, status="open"
+                )
+                db.add(conv)
+                created += 1
+
+        await db.commit()
+
+        msg = "✅ **Sincronización completa**\n\n"
+        if created:
+            msg += f"🆕 {created} contactos nuevos\n"
+        if updated:
+            msg += f"🔄 {updated} contactos actualizados\n"
+        if skipped:
+            msg += f"⏭️ {skipped} sin teléfono válido\n"
+        msg += "\nYa puedes escribirles: «escribe a [nombre] hola»"
+        await tell_owner(msg)
+
+    except HttpError as e:
+        if e.resp.status == 401 or e.resp.status == 403:
+            await tell_owner(
+                "⚠️ Tu conexión con Google expiró. Reconéctala desde el "
+                "panel (Mi negocio → Conectar Google) e intenta de nuevo."
+            )
+        else:
+            logger.exception("Error sincronizando contactos de Google")
+            await tell_owner("⚠️ No pude sincronizar. Intenta de nuevo en un momento.")
+    except Exception:
+        logger.exception("Error inesperado sincronizando contactos")
+        await tell_owner("⚠️ Error inesperado. Intenta de nuevo.")
+
+
+# ── CRM: agregar contactos por chat ────────────────────────────────────────
+
+
+async def _handle_add_contact(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Agrega un contacto al CRM del dueño por chat (adendo §3.4).
+
+    «agrega a Juliana con número 573001234567» → crea el contacto con
+    su conversación y confirma. El número se normaliza a wa_id (solo
+    dígitos, con 57 de Colombia si faltaba).
+    """
+    import re as _re
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    name = (intent.contact_name or "").strip()
+    raw_phone = (intent.contact_phone or "").strip()
+
+    # Si el router no extrajo el teléfono, buscarlo en el texto original
+    if not raw_phone:
+        match = _re.search(r"(\+?[\d][\d\s\-().]{8,17}\d)", text or "")
+        if match:
+            raw_phone = match.group(1)
+
+    if not name:
+        await tell_owner(
+            "¿Cómo se llama el contacto? Dime "
+            "«agrega a [nombre] con número [celular]»."
+        )
+        return
+
+    # Normalizar: solo dígitos. 10 dígitos → antepone 57 (Colombia).
+    digits = _re.sub(r"\D", "", raw_phone)
+    if len(digits) == 10:
+        digits = "57" + digits
+    if len(digits) < 10 or len(digits) > 15 or not digits.isdigit():
+        await tell_owner(
+            f"El número de {name} no me parece un celular válido. "
+            "Envíamelo así: «agrega a Juliana 3001234567»."
+        )
+        return
+
+    # ¿Ya existe ese número para el tenant?
+    existing = (
+        await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant.id,
+                Contact.wa_id == digits,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        await tell_owner(
+            f"Ya tienes a {existing.name or existing.wa_id} con ese número "
+            f"({digits}). Si es otra persona, pásame otro celular."
+        )
+        return
+
+    # Crear contacto + conversación
+    contact = Contact(
+        tenant_id=tenant.id,
+        wa_id=digits,
+        name=name[:100],
+        notes=(intent.description or "").strip()[:500] or None,
+    )
+    db.add(contact)
+    await db.flush()
+    conv = Conversation(
+        tenant_id=tenant.id, contact_id=contact.id, status="open"
+    )
+    db.add(conv)
+    await db.commit()
+
+    await tell_owner(
+        f"📇 Listo: **{name}** quedó guardad@ en el CRM con el "
+        f"número **{digits}**.\n\n¿Quieres agregarle correo, dirección "
+        "o una nota (ej: «cliente obra San Diego»)?"
+    )
+    logger.info("Contacto %s creado por chat (tenant %s)", name, tenant.id)
+
+
+# ── Navegación web ─────────────────────────────────────────────────────────
+
+_SEARCH_PREFIXES = (
+    "busca en internet", "busca en la web", "busca en la internet",
+    "busca en google", "buscame en internet", "buscame en la web",
+    "busca informacion sobre", "busca información sobre",
+    "consulta en internet", "consulta en la web", "googlea",
+    "google ", "búscame", "buscame", "busca", "mira en internet",
+    "mira en la web", "necesito saber de internet",
+)
+_OPEN_WORDS = ("abre", "abra", "abrir", "ver", "ver el", "mostrar")
+
+
+def _clean_search_query(raw: str) -> str:
+    """Quita las palabras de comando y deja solo los términos de búsqueda."""
+    q = raw.lower().strip().rstrip("?,.!¿¡")
+    for prefix in sorted(_SEARCH_PREFIXES, key=len, reverse=True):
+        if q.startswith(prefix):
+            q = q[len(prefix):].strip()
+            break
+    return q.strip(" :,.-") or raw.strip()
+
+
+def _redis_key(conversation_id) -> str:
+    return f"websearch:{conversation_id}"
+
+
+async def _save_last_search(conversation_id, results: list[dict]) -> None:
+    """Guarda la última búsqueda en Redis (TTL 10 min) para «abre N»."""
+    try:
+        from redis.asyncio import from_url
+
+        from app.core.config import get_settings
+        client = from_url(get_settings().redis_url, decode_responses=True)
+        try:
+            import json as _json
+
+            await client.set(
+                _redis_key(conversation_id), _json.dumps(results), ex=600
+            )
+        finally:
+            await client.aclose()
+    except Exception:
+        logger.debug("No se pudo guardar la última búsqueda en Redis")
+
+
+async def _load_last_search(conversation_id) -> list[dict] | None:
+    try:
+        import json as _json
+
+        from redis.asyncio import from_url
+
+        from app.core.config import get_settings
+        client = from_url(get_settings().redis_url, decode_responses=True)
+        try:
+            raw = await client.get(_redis_key(conversation_id))
+            return _json.loads(raw) if raw else None
+        finally:
+            await client.aclose()
+    except Exception:
+        return None
+
+
+async def _handle_web_search(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Navegación web: busca en internet o abre una página (anti-inyección).
+
+    «busca en internet el precio del cobre» → resultados de DuckDuckGo
+    «navega a https://…» / mensaje con URL → contenido de la página
+    «abre 2» → abre el resultado 2 de la última búsqueda (Redis, 10 min)
+
+    El contenido descargado es DATO: se trunca y se muestra, jamás se
+    interpreta como instrucciones.
+    """
+    import re as _re
+
+    from app.services.web_search import (
+        extract_url_from_text,
+        fetch_page_text,
+        format_results_for_chat,
+        search_web,
+    )
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    raw = (intent.message_text or text or "").strip()
+    lowered = raw.lower()
+
+    # 1) «abre N»: abrir un resultado de la última búsqueda
+    open_match = _re.match(
+        r"^(?:abre|abra|abrir|ver|ver el|mostrar|muestrame)\s+"
+        r"(?:el\s+|la\s+)?"
+        r"(?:n[uú]mero\s+|resultado\s+|p[aá]gina\s+)?"
+        r"([1-9])\b",
+        lowered,
+    )
+    if open_match and "http" not in lowered:
+        idx = int(open_match.group(1))
+        results = await _load_last_search(conversation.id)
+        if results and 1 <= idx <= len(results):
+            target = results[idx - 1]
+            await tell_owner(f"🌐 Abriendo: {target['title']}…")
+            try:
+                page = await fetch_page_text(target["url"])
+                body = page[:1500] + ("…" if len(page) > 1500 else "")
+                await tell_owner(
+                    f"📄 *{target['title']}*\n🔗 {target['url']}\n\n{body}"
+                )
+            except Exception:
+                await tell_owner(
+                    "No pude leer esa página (el sitio puede bloquear "
+                    "lectores automáticos). Prueba con otro resultado."
+                )
+            return
+        await tell_owner(
+            "No tengo una búsqueda reciente con ese número. Hazme una "
+            "búsqueda primero (ej: «busca el precio del cobre») o pásame "
+            "el enlace directo."
+        )
+        return
+
+    # 2) URL directa: abrir la página
+    url = extract_url_from_text(raw)
+    if url:
+        await tell_owner("🌐 Abriendo la página…")
+        try:
+            page = await fetch_page_text(url)
+            body = page[:1500] + ("…" if len(page) > 1500 else "")
+            await tell_owner(f"📄 Contenido de {url}:\n\n{body}")
+        except Exception:
+            await tell_owner(
+                f"No pude leer {url}. Verifica que el enlace sea válido."
+            )
+        return
+
+    # 3) Búsqueda en internet
+    query = _clean_search_query(raw)
+    if not query:
+        await tell_owner(
+            "¿Qué busco? Dime «busca en internet [tema]» o pásame un enlace."
+        )
+        return
+
+    await tell_owner(f"🔍 Buscando «{query}» en internet…")
+    try:
+        results = await search_web(query, max_results=5)
+    except Exception:
+        logger.exception("Falló la búsqueda web: %s", query[:50])
+        await tell_owner(
+            "No pude conectarme a internet ahora mismo. Intenta de nuevo "
+            "en un momento."
+        )
+        return
+
+    await _save_last_search(conversation.id, results)
+    await tell_owner(format_results_for_chat(results, query))
+    logger.info("Búsqueda web OK: %s → %d resultados", query[:50], len(results))
+
+
 async def _send_voice_reply(
     db: AsyncSession,
     *,
@@ -2015,13 +2889,46 @@ async def _chat_reply(
         base_url=settings.llm_base_url,
         timeout=30,
     )
+    # El LLM no sabe qué día es: inyectar la fecha actual de Colombia
+    from app.services.assistant import _now_context
+
+    messages_payload[0]["content"] = (
+        f"{_now_context()}\n\n{messages_payload[0]['content']}"
+    )
     response = await client.chat.completions.create(
         model=settings.llm_model,
         messages=messages_payload,
         temperature=0.6,
-        max_tokens=400,
+        # Nemotron razona antes de responder: margen para no quedar
+        # con la cadena de pensamiento como contenido final.
+        max_tokens=1200,
     )
     reply = (response.choices[0].message.content or "").strip()
+    # Anti-fuga de razonamiento: si la "respuesta" parece chain-of-thought
+    # (razona sobre el usuario en vez de hablarle), no enviarla tal cual.
+    # Modelos de razonamiento (Nemotron, etc.) pueden filtrar su thinking.
+    _REASONING_MARKERS = (
+        # Inglés - chain of thought típico
+        "the user", "user wants", "user said", "user is", "user needs",
+        "let me", "i should", "i will", "i need to", "i must", "i'll",
+        "first i", "then i", "next i", "finally i",
+        "analysis:", "reasoning:", "thinking:", "thought:",
+        "step 1", "step 2", "step 3",
+        # Español - razonamiento en español
+        "debo", "primero debo", "luego debo", "después debo",
+        "tengo que", "voy a", "primero voy a", "luego voy a",
+        "analizando:", "razonando:", "pensando:",
+        "el usuario quiere", "el usuario dice", "el usuario necesita",
+        "el usuario está", "el usuario solicitó",
+    )
+    lowered = reply[:500].lower()  # revisar más caracteres
+    if reply and any(m in lowered for m in _REASONING_MARKERS):
+        logger.warning("Chat: respuesta con fuga de razonamiento, descartada (len=%d)", len(reply))
+        reply = ""
+    # Fallback si el filtro dejó la respuesta vacía
+    if not reply:
+        reply = "Entendido, ¿en qué te ayudo? 🙌"
+        logger.info("Chat: usando fallback tras filtro anti-leakage")
     if reply:
         await _send_out_message(
             db,
@@ -2031,13 +2938,8 @@ async def _chat_reply(
             wa_id=wa_id,
             text=reply,
         )
-        await log_service_usage(
-            db,
-            tenant_id=tenant.id,
-            module_key="quoter",
-            kind="message",
-            contact_id=contact_id_for_usage,
-        )
+        # NO loguear uso de "quoter" aquí: _chat_reply es charla general,
+        # el quoter se loguea solo en _handle_quote cuando se genera una cotización real.
 
 
 async def _is_prospect(
@@ -2170,6 +3072,23 @@ async def handle_incoming(
     _t0 = datetime.now(UTC)  # para medir la latencia percibida por el dueño
 
     try:
+        # Comandos de super admin desde el chat (prefijo "admin:"):
+        # "admin: lista tenants", "admin: activa módulo X en tenant Y", etc.
+        if text.lower().startswith("admin:"):
+            await _handle_platform_admin(
+                db,
+                tenant=tenant,
+                contact=contact,
+                channel=channel,
+                conversation=conversation,
+                wa_id=wa_id,
+                text=text,
+            )
+            return
+
+        # Soporte para comandos con barra "/" como alias de lenguaje natural
+        text = _normalize_slash_commands(text)
+
         # Sin texto: solo las notas de voz del dueño piden aclaración.
         # Documentos e imágenes van en silencio (eco de nuestros propios PDFs
         # incluido — además quedan deduplicados por id en la ingesta).
@@ -2217,6 +3136,7 @@ async def handle_incoming(
             await _handle_site_log(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
             )
             return
 
@@ -2265,6 +3185,7 @@ async def handle_incoming(
             await _handle_inventory(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
             )
             return
 
@@ -2272,6 +3193,7 @@ async def handle_incoming(
             await _handle_expense(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
             )
             return
 
@@ -2279,6 +3201,7 @@ async def handle_incoming(
             await _handle_warranty(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
             )
             return
 
@@ -2286,6 +3209,7 @@ async def handle_incoming(
             await _handle_maintenance(
                 db, tenant=tenant, channel=channel,
                 conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
             )
             return
 
@@ -2355,6 +3279,96 @@ async def handle_incoming(
             )
             return
 
+        if intent.intention == "support":
+            await _handle_support(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+            )
+            return
+
+        if intent.intention == "conversation_log":
+            await _handle_conversation_log(
+                db,
+                tenant=tenant,
+                channel=channel,
+                conversation=conversation,
+                wa_id=wa_id,
+                intent=intent,
+            )
+            return
+
+        if intent.intention == "web_search":
+            usable, why = await _module_usable(db, tenant=tenant, module_key="web_search")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
+            await _handle_web_search(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
+            )
+            return
+
+        if intent.intention == "manage_services":
+            await _handle_manage_services(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
+            )
+            return
+
+        if intent.intention == "add_contact":
+            usable, why = await _module_usable(db, tenant=tenant, module_key="crm")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
+            await _handle_add_contact(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
+            )
+            return
+
+        if intent.intention == "sync_contacts":
+            await _handle_sync_contacts(
+                db, tenant=tenant, channel=channel,
+                conversation=conversation, wa_id=wa_id, intent=intent,
+                text=text,
+            )
+            return
+
+        if intent.intention == "help":
+            # Verificar si este contacto/tenant tiene un user platform_admin
+            from sqlalchemy import select
+
+            from app.models import User
+
+            platform_admin_user = (
+                await db.execute(
+                    select(User).where(
+                        User.tenant_id == tenant.id,
+                        User.is_platform_admin.is_(True),
+                    )
+                )
+            ).scalar_one_or_none()
+            is_platform_admin = platform_admin_user is not None
+
+            await _handle_help(
+                db,
+                tenant=tenant,
+                channel=channel,
+                conversation=conversation,
+                wa_id=wa_id,
+                is_platform_admin=is_platform_admin,
+            )
+            return
+
         # Conversación: el LLM responde con el contexto del historial
         await _chat_reply(
             db,
@@ -2388,3 +3402,402 @@ async def handle_incoming(
             )
         except Exception:
             logger.exception("Tampoco pude avisar al cliente del fallo")
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Guía de herramientas del chat (intención "help")
+# ═════════════════════════════════════════════════════════════════════
+
+
+async def _handle_help(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    is_platform_admin: bool = False,
+) -> None:
+    """Envía la guía paso a paso de comandos que el dueño puede usar
+    por WhatsApp (adendo §3.4: guía de herramientas del asistente).
+
+    Si es super admin de la plataforma, incluye comandos de administración
+    multi-tenant. Se aceptan tanto lenguaje natural como barra /.
+    """
+    # Sección común (dueño del negocio)
+    guia = (
+        "🤖 *Aura — Guía de comandos por chat*\n\n"
+        "💡 *Tip:* puedes usar lenguaje natural o barra `/`\n"
+        "   (ej: `/ayuda`, `/mis_contactos`, `/cotiza ...`)\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "*📋 PARA TU NEGOCIO (dueño):*\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "*Cotizaciones:*\n"
+        "• `/cotiza a Juan Pérez: 2 tableros, 10m cable`\n"
+        "• `/cotizacion para el cliente María`\n\n"
+        "*Contactos (CRM):*\n"
+        "• `/crea_contacto Jhoymar +57321933514`\n"
+        "• `/mis_contactos` — lista tus clientes\n"
+        "• `/edita_contacto Jhoymar a Juan Pérez`\n"
+        "• `/borra_contacto Jhoymar`\n"
+        "• `/contacto Jhoymar` — ver detalle\n\n"
+        "*Obras / seguimiento de obra:*\n"
+        "• `/abre_obra Instalación iluminación para Jhoymar`\n"
+        "• `/mis_obras` — obras abiertas\n"
+        "• `/obra Jhoymar: agrega gasto 140k mano de obra`\n"
+        "• `/edita_obra Jhoymar a Instalación completa`\n"
+        "• `/cierra_obra Jhoymar`\n\n"
+        "*Recordatorios:*\n"
+        "• `/recordame llamar a Laura a las 8 PM`\n"
+        "• `/mis_recordatorios`\n\n"
+        "*Gastos / Finanzas:*\n"
+        "• `/gasto 45000 cable THHN`\n"
+        "• `/ingreso 500000 cobré a Juliana`\n"
+        "• `/mis_gastos` — resumen del mes\n"
+        "• `/mi_cartera` — balance actual\n\n"
+        "*Inventario:*\n"
+        "• `/tengo 20m cable` / `/usé 5m cable`\n"
+        "• `/inventario` — ver stock\n\n"
+        "*Otros:*\n"
+        "• `/ayuda` o «ayuda» — esta guía\n"
+        "• `/servicios` — ver módulos activos\n"
+        "• `/sincroniza_contactos` — trae contactos de Google\n"
+    )
+
+    # Sección super admin (solo si es platform admin)
+    if is_platform_admin:
+        guia += (
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "*🛡️ SUPER ADMIN (plataforma):*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "*Tenants (dueños del bot):*\n"
+            "• `/admin: lista tenants` — ver todos los negocios\n"
+            "• `/admin: ver tenant <nombre>` — detalle + módulos\n\n"
+            "*Módulos por tenant:*\n"
+            "• `/admin: activa <módulo> en <tenant>`\n"
+            "• `/admin: desactiva <módulo> en <tenant>`\n\n"
+            "*Planes:*\n"
+            "• `/admin: cambia plan de <tenant> a premium`\n"
+            "  (opciones: trial, freemium, premium)\n\n"
+            "*Comunicación:*\n"
+            "• `/admin: envía mensaje a dueño de <tenant> <texto>`\n"
+        )
+
+    guia += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEscribe lo que necesites y te ayudo al instante."
+
+    await _send_out_message(
+        db,
+        tenant_id=tenant.id,
+        conversation=conversation,
+        channel=channel,
+        wa_id=wa_id,
+        text=guia,
+    )
+
+
+def _normalize_slash_commands(text: str) -> str:
+    """Convierte comandos con barra / a lenguaje natural para el router LLM.
+
+    El router de intenciones entiende mejor el lenguaje natural; esto permite
+    usar `/ayuda`, `/mis_contactos`, etc. como atajos rápidos.
+    """
+    text_lower = text.strip().lower()
+
+    # Mapeo de comandos / → lenguaje natural
+    slash_map: dict[str, str] = {
+        "/ayuda": "ayuda",
+        "/help": "ayuda",
+        "/comandos": "ayuda",
+        "/guia": "ayuda",
+        "/mis_contactos": "mis contactos",
+        "/contactos": "mis contactos",
+        "/crea_contacto": "crea contacto",
+        "/nuevo_contacto": "crea contacto",
+        "/edita_contacto": "edita contacto",
+        "/borra_contacto": "borra contacto",
+        "/contacto": "contacto",
+        "/mis_obras": "mis obras",
+        "/obras": "mis obras",
+        "/abre_obra": "abre obra",
+        "/nueva_obra": "abre obra",
+        "/edita_obra": "edita obra",
+        "/cierra_obra": "cierra obra",
+        "/cerrar_obra": "cierra obra",
+        "/obra": "obra",
+        "/mis_recordatorios": "mis recordatorios",
+        "/recordatorios": "mis recordatorios",
+        "/recordame": "recuérdame",
+        "/mis_gastos": "mis gastos",
+        "/gastos": "mis gastos",
+        "/mi_cartera": "mi cartera",
+        "/cartera": "mi cartera",
+        "/balance": "mi cartera",
+        "/gasto": "gasté",
+        "/ingreso": "cobré",
+        "/inventario": "qué inventario tengo",
+        "/stock": "qué inventario tengo",
+        "/tengo": "tengo",
+        "/usé": "usé",
+        "/use": "usé",
+        "/servicios": "lista mis servicios",
+        "/modulos": "lista mis servicios",
+        "/modulos_activos": "lista mis servicios",
+        "/sincroniza_contactos": "sincroniza contactos de google",
+        "/sync_contactos": "sincroniza contactos de google",
+        "/cotiza": "cotiza",
+        "/cotizacion": "cotización",
+    }
+
+    # Buscar coincidencia exacta al inicio (después de /)
+    for slash_cmd, natural in slash_map.items():
+        if text_lower.startswith(slash_cmd):
+            # Reemplazar solo el comando, mantener el resto
+            resto = text[len(slash_cmd):].strip()
+            if resto:
+                return f"{natural} {resto}"
+            return natural
+
+    # Si no coincide, devolver el texto original
+    return text
+
+
+# ═════════════════════════════════════════════════════════════════════
+# Super admin desde el chat (comandos con prefijo "admin:")
+# ═════════════════════════════════════════════════════════════════════
+
+
+def _normalize_admin_cmd(text: str) -> tuple[str, str]:
+    """Separa el prefijo "admin:" y devuelve (comando, argumento)."""
+    cuerpo = text[len("admin:"):].strip()
+    partes = cuerpo.split(None, 1)
+    comando = partes[0].lower() if partes else ""
+    argumento = partes[1].strip() if len(partes) > 1 else ""
+    return comando, argumento
+
+
+async def _handle_platform_admin(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    contact: Contact,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    text: str,
+) -> None:
+    """Acciones de super admin desde el chat del dueño.
+
+    Requiere que el remitente sea owner de su tenant (ya verificado al
+    llegar al path de equipo). Comandos soportados:
+    - admin: lista tenants
+    - admin: ver tenant <nombre|slug>
+    - admin: activa <módulo> en <tenant>
+    - admin: desactiva <módulo> en <tenant>
+    - admin: cambia plan de <tenant> a <trial|freemium|premium>
+    - admin: envía mensaje a dueño de <tenant> <texto>
+    """
+    from sqlalchemy import func, select
+
+    from app.models import TenantModule
+
+    async def tell(msg: str) -> None:
+        await _send_out_message(
+            db,
+            tenant_id=tenant.id,
+            conversation=conversation,
+            channel=channel,
+            wa_id=wa_id,
+            text=msg,
+        )
+
+    comando, argumento = _normalize_admin_cmd(text)
+    if not comando:
+        await tell(
+            "Comandos de admin disponibles:\n"
+            "• «admin: lista tenants»\n"
+            "• «admin: ver tenant <nombre>»\n"
+            "• «admin: activa <módulo> en <tenant>»\n"
+            "• «admin: desactiva <módulo> en <tenant>»\n"
+            "• «admin: cambia plan de <tenant> a <trial|freemium|premium>»\n"
+            "• «admin: envía mensaje a dueño de <tenant> <texto>»"
+        )
+        return
+
+    # Listar todos los tenants (clientes del super admin = dueños del bot)
+    if comando in ("lista", "listar", "list"):
+        result = await db.execute(select(Tenant).order_by(Tenant.name))
+        tenants = result.scalars().all()
+        if not tenants:
+            await tell("No hay tenants registrados todavía.")
+            return
+        lines = ["🏢 *Tenants registrados (dueños del bot):*\n"]
+        for t in tenants:
+            mod_count = (
+                await db.execute(
+                    select(func.count(TenantModule.id)).where(
+                        TenantModule.tenant_id == t.id,
+                        TenantModule.is_enabled.is_(True),
+                    )
+                )
+            ).scalar_one()
+            lines.append(
+                f"• {t.name} ({t.slug}) — plan: {t.plan}, "
+                f"WhatsApp: {t.wa_id or '—'}, módulos activos: {mod_count}"
+            )
+        await tell("\n".join(lines))
+        return
+
+    # Ver detalle de un tenant
+    if comando in ("ver", "detalle"):
+        nombre = argumento.strip()
+        if not nombre:
+            await tell("Dime el nombre o slug del tenant: «admin: ver tenant <nombre>»")
+            return
+        result = await db.execute(
+            select(Tenant).where(
+                (Tenant.name.ilike(f"%{nombre}%")) | (Tenant.slug.ilike(f"%{nombre}%"))
+            )
+        )
+        t = result.scalar_one_or_none()
+        if not t:
+            await tell(f"No encontré ningún tenant llamado «{nombre}».")
+            return
+        mod_rows = (
+            await db.execute(
+                select(TenantModule).where(TenantModule.tenant_id == t.id)
+            )
+        ).scalars().all()
+        mods = ", ".join(
+            f"{m.module_key}:{'✅' if m.is_enabled else '❌'}" for m in mod_rows
+        ) or "—"
+        await tell(
+            f"🏢 *{t.name}* ({t.slug})\n"
+            f"Plan: {t.plan} | WhatsApp: {t.wa_id or '—'} | "
+            f"Activo: {'sí' if t.is_active else 'no'}\n"
+            f"Módulos: {mods}"
+        )
+        return
+
+    # Activar / desactivar módulo de un tenant
+    if comando in ("activa", "activar", "enciende", "enable") or comando in (
+        "desactiva", "desactivar", "apaga", "disable"
+    ):
+        enable = comando in ("activa", "activar", "enciende", "enable")
+        # Formato: "modulo X en tenant Y" o "X en Y"
+        arg_lower = argumento.lower()
+        if " en " not in arg_lower:
+            await tell(
+                "Formato: «admin: activa <módulo> en <tenant>» "
+                "o «admin: desactiva <módulo> en <tenant>»."
+            )
+            return
+        modulo, tenant_nombre = arg_lower.split(" en ", 1)
+        modulo = modulo.strip()
+        tenant_nombre = tenant_nombre.strip()
+        result = await db.execute(
+            select(Tenant).where(
+                (Tenant.name.ilike(f"%{tenant_nombre}%"))
+                | (Tenant.slug.ilike(f"%{tenant_nombre}%"))
+            )
+        )
+        t = result.scalar_one_or_none()
+        if not t:
+            await tell(f"No encontré ningún tenant llamado «{tenant_nombre}».")
+            return
+        modulo_row = (
+            await db.execute(
+                select(TenantModule).where(
+                    TenantModule.tenant_id == t.id,
+                    TenantModule.module_key == modulo,
+                )
+            )
+        ).scalar_one_or_none()
+        if not modulo_row:
+            await tell(
+                f"El tenant «{t.name}» no tiene el módulo «{modulo}» registrado."
+            )
+            return
+        modulo_row.is_enabled = enable
+        await db.commit()
+        await tell(
+            f"{'✅ Activado' if enable else '⛔ Desactivado'} el módulo "
+            f"«{modulo}» en el tenant «{t.name}»."
+        )
+        return
+
+    # Cambiar plan de un tenant
+    if comando in ("cambia", "cambiar"):
+        # Formato: "plan de <tenant> a <plan>"
+        arg_lower = argumento.lower()
+        if " de " not in arg_lower or " a " not in arg_lower:
+            await tell(
+                "Formato: «admin: cambia plan de <tenant> a <trial|freemium|premium>»."
+            )
+            return
+        # "plan de <tenant> a <plan>"
+        resto = arg_lower.split(" de ", 1)[1]
+        tenant_nombre, plan_nombre = resto.split(" a ", 1)
+        tenant_nombre = tenant_nombre.strip()
+        plan_nombre = plan_nombre.strip()
+        if plan_nombre not in ("trial", "freemium", "premium"):
+            await tell("El plan debe ser: trial, freemium o premium.")
+            return
+        result = await db.execute(
+            select(Tenant).where(
+                (Tenant.name.ilike(f"%{tenant_nombre}%"))
+                | (Tenant.slug.ilike(f"%{tenant_nombre}%"))
+            )
+        )
+        t = result.scalar_one_or_none()
+        if not t:
+            await tell(f"No encontré ningún tenant llamado «{tenant_nombre}».")
+            return
+        t.plan = plan_nombre
+        await db.commit()
+        await tell(
+            f"✅ Plan del tenant «{t.name}» cambiado a *{plan_nombre}*."
+        )
+        return
+
+    # Enviar mensaje al dueño de un tenant
+    if comando in ("envía", "enviar"):
+        # Formato: "mensaje a dueño de <tenant> <texto>"
+        arg_lower = argumento.lower()
+        if " dueño de " not in arg_lower:
+            await tell(
+                "Formato: «admin: envía mensaje a dueño de <tenant> <texto>»."
+            )
+            return
+        # Usamos el argumento original para preservar mayúsculas en el mensaje
+        texto_original = argumento
+        _, despues = texto_original.split(" dueño de ", 1)
+        # despues = "<tenant> <texto>" → split en el primer espacio
+        partes_despues = despues.split(None, 1)
+        tenant_nombre = partes_despues[0]
+        mensaje = partes_despues[1] if len(partes_despues) > 1 else ""
+        if not mensaje:
+            await tell("Dime el texto a enviar: «admin: envía mensaje a dueño de <tenant> <texto>»")
+            return
+        result = await db.execute(
+            select(Tenant).where(
+                (Tenant.name.ilike(f"%{tenant_nombre}%"))
+                | (Tenant.slug.ilike(f"%{tenant_nombre}%"))
+            )
+        )
+        t = result.scalar_one_or_none()
+        if not t or not t.wa_id:
+            await tell(
+                f"No encontré un tenant con WhatsApp configurado para «{tenant_nombre}»."
+            )
+            return
+        try:
+            await channel.send_text(t.wa_id, f"📢 Mensaje del super admin:\n{mensaje}")
+            await tell(f"✅ Mensaje enviado al dueño de «{t.name}» ({t.wa_id}).")
+        except Exception as exc:
+            logger.exception("No se pudo enviar mensaje de admin al tenant %s", t.id)
+            await tell(f"No pude enviar el mensaje al dueño de «{t.name}»: {exc}")
+        return
+
+    await tell(
+        "Comando no reconocido. Usa «admin: lista tenants» para ver las opciones."
+    )

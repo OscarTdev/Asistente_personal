@@ -108,6 +108,13 @@ export interface QuotePage {
   limit: number
 }
 
+export interface ContactQuote {
+  id: string
+  status: string
+  total: number
+  created_at: string
+}
+
 export interface ExtractedSuggestion {
   description: string
   quantity: string | number
@@ -362,6 +369,11 @@ export interface TenantDetail extends TenantSummary {
   modules: TenantModuleView[]
   payment_methods: TenantPaymentMethod[]
   subscription: TenantSubscription | null
+  last_message_at: string | null
+  last_quote_at: string | null
+  total_quotes_amount: number
+  quotes_last_30d: number
+  active_services: string[]
 }
 
 // ── Dashboard ──────────────────────────────────────────────────────────────
@@ -431,6 +443,17 @@ export interface FollowUpRunResult {
 }
 // -- Administraci�n de la plataforma (solo is_platform_admin) -------------
 
+export interface AdminTenantContact extends Contact {
+  tenant_id: string
+}
+
+export interface AdminTenantContactDetail extends ContactDetail {
+  tenant_id: string
+}
+
+export interface AdminTenantContactMessagesPage extends ContactMessagesPage {
+}
+
 export interface AdminTenant {
   id: string
   name: string
@@ -497,12 +520,28 @@ export interface AdminConversation {
   last_message_at: string | null
 }
 
+export interface AdminConversationPage {
+  items: AdminConversation[]
+  total: number
+}
+
 export interface AdminMessage {
   id: string
   direction: 'in' | 'out'
   type: string
   content: string | null
   created_at: string
+}
+
+export interface AdminMessagePage {
+  items: AdminMessage[]
+  total: number
+}
+
+export interface TenantUpdatePayload {
+  name?: string
+  bot_name?: string
+  customer_mode?: boolean
 }
 
 export interface CheckoutLinkResult {
