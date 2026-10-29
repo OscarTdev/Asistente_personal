@@ -3,7 +3,7 @@
 GET    /platform/ai-config        -> lista completa con metadatos
 PATCH  /platform/ai-config/{key}  -> actualiza una clave
 """
-from fastapi import APIRouter, Depends, HTTPException, Path, status
+from fastapi import APIRouter, Depends, Path
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 

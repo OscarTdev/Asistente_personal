@@ -153,10 +153,10 @@ MÉTRICAS RECIENTES:
 {json.dumps(metrics, indent=2, ensure_ascii=False)}
 
 REGLAS DE DECISIÓN:
-1. Si error_rate > 5% en un modelo/proveedor → considerar fallback al siguiente proveedor
-2. Si avg_latency_ms > 10000 (10s) consistentemente → considerar modelo más rápido
+1. Si error_rate > 3% en un modelo/proveedor → considerar fallback al siguiente proveedor
+2. Si avg_latency_ms > 5000 (5s) consistentemente → considerar modelo más rápido
 3. Si hay timeouts repetidos en visión → cambiar LLM_MODEL_VISION a proveedor con visión estable
-4. Si STT falla mucho → verificar STT_API_KEY / STT_BASE_URL
+4. Si STT error_rate > 5% → verificar STT_API_KEY / STT_BASE_URL
 5. Si TTS falla y TTS_API_KEY vacío → OK (usa Edge TTS gratis)
 6. NUNCA cambies a un proveedor sin API key configurada
 7. Cambia UNA sola cosa a la vez para aislar causas

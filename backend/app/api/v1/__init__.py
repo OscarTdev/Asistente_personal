@@ -11,11 +11,11 @@ from .google import router as google_router
 from .google_contacts import router as google_contacts_router
 from .modules import router as modules_router
 from .obras import router as obras_router
+from .platform_ai import router as platform_ai_router
 from .quotes import router as quotes_router
 from .reminders import router as reminders_router
 from .service_data import router as service_data_router
 from .webhooks import router as webhooks_router
-from .platform_ai import router as platform_ai_router
 from .whatsapp import router as whatsapp_router
 
 api_router = APIRouter()
