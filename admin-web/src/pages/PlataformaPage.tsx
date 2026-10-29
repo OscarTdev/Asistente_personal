@@ -7,7 +7,7 @@ import { Card } from "../components/ui/card"
 import { Button } from "../components/ui/button"
 import { Input } from "../components/ui/input"
 import { ErrorSlip } from "../components/ui/error-slip"
-import { IconPower, IconWifi } from "@/components/ui/icons"
+import { IconPower, IconWifi, IconBrain, IconRefreshCw, IconKey } from "@/components/ui/icons"
 import { useAuth } from '../auth/AuthContext'
 import {
   useConnectWhatsapp,
@@ -15,6 +15,10 @@ import {
   useTestSendWhatsapp,
   useWhatsappStatus,
 } from '../hooks/useWhatsapp'
+import {
+  usePlatformAIConfig,
+  useUpdatePlatformAIConfig,
+} from '../hooks/usePlatformAI'
 
 function stateLabel(state: string): string {
   switch (state) {
@@ -45,12 +49,16 @@ export default function PlataformaPage() {
   const connect = useConnectWhatsapp()
   const disconnect = useDisconnectWhatsapp()
   const testSend = useTestSendWhatsapp()
+  const { data: aiConfig, isLoading: aiLoading, error: aiError } = usePlatformAIConfig()
+  const updateAI = useUpdatePlatformAIConfig()
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [pairingCode, setPairingCode] = useState<string | null>(null)
   const [testNumber, setTestNumber] = useState('')
   const [testText, setTestText] = useState('¡Hola! Soy el asistente Aura en pruebas 🛠')
   const [testResult, setTestResult] = useState<string | null>(null)
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   if (!isPlatformAdmin) {
     return (
@@ -231,9 +239,104 @@ export default function PlataformaPage() {
         </Card>
       )}
 
+      )}
+        </Card>
+      )}
+
+      {/* Configuración IA (guardián + manual) */}
+      <Card className="mb-6 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <IconBrain className="h-5 w-5 text-pine" />
+            <h2 className="text-sm font-semibold text-ink">Proveedores IA (LLM / STT / TTS)</h2>
+          </div>
+          {aiLoading && (
+            <IconRefreshCw className="h-4 w-4 text-linen-400 animate-spin" />
+          )}
+        </div>
+        <p className="mt-1 text-xs text-linen-600">
+          El guardián LLM monitorea fallos cada 10 min y cambia proveedor/modelo
+          automáticamente. Aquí ves la config actual y puedes forzar cambios.
+        </p>
+        {(aiError || updateAI.error) && (
+          <div className="mt-3 space-y-2">
+            {aiError && <ErrorSlip message={aiError.message} />}
+            {updateAI.error && <ErrorSlip message={updateAI.error.message} />}
+          </div>
+        )}
+        {aiConfig && (
+          <div className="mt-3 space-y-3">
+            {Object.entries(aiConfig).map(([key, item]) => (
+              <div
+                key={key}
+                className="flex flex-wrap items-center gap-3 p-3 bg-linen-50 rounded-lg"
+              >
+                <div className="min-w-[180px] flex items-center gap-2">
+                  {item.is_secret && (
+                    <IconKey className="h-3.5 w-3.5 text-linen-400" />
+                  )}
+                  <span className="text-xs font-medium text-ink-soft">{key}</span>
+                </div>
+                <span className="flex-1 min-w-[150px] truncate text-sm text-ink font-mono">
+                  {item.is_secret ? (item.value ? '••••••••' : '—') : (item.value || '—')}
+                </span>
+                {item.label && (
+                  <span className="text-xs text-linen-500">{item.label}</span>
+                )}
+                <div className="flex items-center gap-2">
+                  {editingKey === key ? (
+                    <>
+                      <Input
+                        type={item.value_type === 'url' ? 'url' : 'text'}
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-64"
+                        aria-label={`Valor para ${key}`}
+                      />
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          updateAI.mutate({ key, value: editValue })
+                          setEditingKey(null)
+                        }}
+                        disabled={updateAI.isLoading}
+                      >
+                        Guardar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditingKey(null)}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setEditingKey(key)
+                        setEditValue(item.value)
+                      }}
+                    >
+                      Editar
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          )}
+        )}
+        {!aiConfig && !aiLoading && (
+          <p className="mt-3 text-center text-sm text-linen-500">
+            Sin configuración cargada.
+          </p>
+        )}
+      </Card>
+
       <p className="mt-4 text-xs text-linen-600">
-        Próximamente aquí: proveedores de IA (LLM, STT, TTS), auditoría de la
-        plataforma y estado de los servicios.
+        Próximamente aquí: auditoría de la plataforma y estado de los servicios.
       </p>
     </div>
   )

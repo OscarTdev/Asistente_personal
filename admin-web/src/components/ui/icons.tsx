@@ -86,3 +86,17 @@ export const IconAuto = createIcon([
   <line x1="1" y1="12" x2="3" y2="12" key="l4" />,
   <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" key="l5" />,
 ], 'IconAuto')
+
+// IA / Proveedores
+export const IconBrain = createIcon([
+  <path d="M12 2a3 3 0 00-3 3v7a3 3 0 006 0V5a3 3 0 00-3-3z" key="p1" />,
+  <path d="M12 17a3 3 0 01-3-3V9a3 3 0 016 0v5a3 3 0 01-3 3z" key="p2" />,
+  <path d="M3 12h18" key="p3" />,
+  <path d="M12 3v3" key="p4" />,
+  <path d="M12 18v3" key="p5" />,
+], 'IconBrain')
+
+export const IconKey = createIcon([
+  <path d="M15.5 3.5a2.5 2.5 0 110 5H14v11a1 1 0 01-2 0V8.5H8.5a2.5 2.5 0 110-5H10V2a1 1 0 012 0v1.5h3.5z" key="p1" />,
+  <circle cx="15.5" cy="3.5" r="1.5" key="p2" />,
+], 'IconKey')
