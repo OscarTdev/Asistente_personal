@@ -45,6 +45,46 @@ async def test_stats_empty_tenant(client: AsyncClient, auth_headers: dict[str, s
 
 
 @pytest.mark.asyncio
+async def test_realtime_reports_who_is_using_the_bot(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict[str, str],
+    tenant,
+):
+    contact = Contact(tenant_id=tenant.id, wa_id="573005551111", name="Cliente Activo")
+    db_session.add(contact)
+    await db_session.flush()
+    conversation = Conversation(
+        tenant_id=tenant.id,
+        contact_id=contact.id,
+        status="open",
+        last_message_at=datetime.now(UTC),
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+    db_session.add(
+        Message(
+            tenant_id=tenant.id,
+            conversation_id=conversation.id,
+            direction="in",
+            type="text",
+            content="Hola Aura",
+            whatsapp_message_id="wamid-realtime-1",
+            status="received",
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/v1/dashboard/realtime", headers=auth_headers)
+    assert resp.status_code == HTTPStatus.OK
+    data = resp.json()
+    assert data["active_now"] == 1
+    assert data["messages_in_window"] == 1
+    assert data["users"][0]["name"] == "Cliente Activo"
+    assert data["users"][0]["last_direction"] == "in"
+
+
+@pytest.mark.asyncio
 async def test_stats_count_activity_and_quote_logs_usage(
     client: AsyncClient,
     db_session: AsyncSession,

@@ -8,7 +8,7 @@ from .conversations import Conversation
 from .document import Document
 from .document_counter import DocumentCounter
 from .events import Event
-from .expense import Expense
+from .expense import Expense, WalletSnapshot
 from .follow_ups import FollowUp
 from .google_connection import GoogleConnection
 from .inventory_item import InventoryItem
@@ -22,6 +22,7 @@ from .payment_webhook_event import PaymentWebhookEvent
 from .pending_action import PendingAction
 from .plan_entitlement import PlanEntitlement
 from .plan_prices import PlanPrice
+from .platform_ai import PlatformAIConfig
 from .quote_items import QuoteItem
 from .quotes import Quote
 from .reminder import Reminder
@@ -64,6 +65,7 @@ __all__ = [
     "PaymentWebhookEvent",
     "PlanPrice",
     "PlanEntitlement",
+    "PlatformAIConfig",
     "ServiceStatus",
     "TenantServiceOverride",
     "AuditLog",
@@ -72,6 +74,7 @@ __all__ = [
     "Maintenance",
     "Warranty",
     "Expense",
+    "WalletSnapshot",
     "GoogleConnection",
     "InventoryItem",
     "SiteLog",

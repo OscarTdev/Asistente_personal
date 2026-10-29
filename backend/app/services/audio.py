@@ -34,6 +34,26 @@ def mask_for_speech(text: str) -> str:
     return result
 
 
+def audio_file_for_upload(audio_bytes: bytes) -> tuple[str, str]:
+    """(nombre, tipo MIME) según la firma real del audio.
+
+    Las notas de voz de WhatsApp son OGG/Opus. Etiquetarlas como WAV (lo
+    que se hacía antes) puede hacer que el proveedor rechace el archivo.
+    """
+    head = audio_bytes[:12]
+    if head.startswith(b"OggS"):
+        return "audio.ogg", "audio/ogg"
+    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return "audio.mp3", "audio/mpeg"
+    if head[:4] == b"RIFF":
+        return "audio.wav", "audio/wav"
+    if head[4:8] == b"ftyp":
+        return "audio.m4a", "audio/mp4"
+    if head.startswith(b"\x1aE\xdf\xa3"):
+        return "audio.webm", "audio/webm"
+    return "audio.ogg", "audio/ogg"  # formato habitual de WhatsApp
+
+
 class STTProvider(ABC):
     """Interfaz de transcripción de voz a texto."""
 
@@ -61,11 +81,12 @@ class OpenAISTT(STTProvider):
         self.model = model
 
     async def transcribe(self, audio_bytes: bytes, *, language: str = "es") -> str:
+        file_name, mime = audio_file_for_upload(audio_bytes)
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
                 f"{self.base_url}/audio/transcriptions",
                 headers={"Authorization": f"Bearer {self.api_key}"},
-                files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+                files={"file": (file_name, audio_bytes, mime)},
                 data={"model": self.model, "language": language},
             )
             response.raise_for_status()
@@ -164,6 +185,9 @@ async def transcribe_audio_message(media_base64: str, *, language: str = "es") -
     """
     provider = get_stt_provider()
     if provider is None:
+        logger.warning(
+            "STT_API_KEY no configurada: los audios no se pueden transcribir"
+        )
         return ""
 
     try:

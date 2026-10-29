@@ -1,30 +1,35 @@
-// Minimal accessible toggle switch — the concierge's service switch.
+import * as React from 'react'
+import * as SwitchPrimitives from '@radix-ui/react-switch'
+import { cn } from '../../lib/utils'
 
-interface SwitchProps {
-  checked: boolean
-  onChange: (checked: boolean) => void
-  disabled?: boolean
-  label: string
-}
+const Switch = React.forwardRef<
+  React.ElementRef<typeof SwitchPrimitives.Root>,
+  React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>
+>(({ className, checked, onCheckedChange, ...props }, ref) => (
+  <SwitchPrimitives.Root
+    className={cn(
+      'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50',
+      // Use explicit colors that work in both light and dark
+      'data-[state=unchecked]:bg-[var(--color-border-strong)]',
+      className
+    )}
+    style={{
+      backgroundColor: checked ? 'var(--color-accent)' : 'var(--color-border-strong)',
+      ...props.style,
+    }}
+    checked={checked}
+    onCheckedChange={onCheckedChange}
+    ref={ref}
+    {...props}
+  >
+    <SwitchPrimitives.Thumb
+      className={cn(
+        'pointer-events-none block h-5 w-5 rounded-full shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0',
+        'bg-white'
+      )}
+    />
+  </SwitchPrimitives.Root>
+))
+Switch.displayName = SwitchPrimitives.Root.displayName
 
-export default function Switch({ checked, onChange, disabled = false, label }: SwitchProps) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-deep focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:opacity-50 disabled:pointer-events-none ${
-        checked ? 'bg-pine' : 'bg-linen-300'
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-panel shadow-sm transition-transform ${
-          checked ? 'translate-x-6' : 'translate-x-1'
-        }`}
-      />
-    </button>
-  )
-}
+export { Switch }

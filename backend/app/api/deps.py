@@ -13,6 +13,9 @@ from app.core.security import decode_access_token
 from app.models import Tenant, User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+optional_oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login", auto_error=False
+)
 
 
 async def get_current_user(
@@ -47,16 +50,34 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check tenant matches
+    # Check tenant matches (allowing impersonation for platform admin)
     if user.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario no válido",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        if user.is_platform_admin and payload.get("impersonated"):
+            target_tenant = (
+                await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+            ).scalar_one_or_none()
+            if not target_tenant or not target_tenant.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="El cliente a impersonar no existe o está inactivo",
+                )
+            # Expunge from session so modifying in-memory tenant_id is never persisted
+            db.expunge(user)
+            user.original_tenant_id = user.tenant_id
+            user.tenant_id = tenant_id
+            user.bot_name = target_tenant.bot_name
+            user.target_tenant_name = target_tenant.name
+            user.target_tenant_plan = target_tenant.plan
+            user.is_impersonating = True
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Usuario no válido",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    # Check role matches (optional, but good practice)
-    if user.role != role:
+    # Check role matches (optional, but good practice; relax when impersonating)
+    if not payload.get("impersonated") and user.role != role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no válido",
@@ -72,6 +93,19 @@ async def get_current_user(
         )
 
     return user
+
+
+async def get_optional_user(
+    token: str | None = Depends(optional_oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Returns the user when a valid bearer token is present, otherwise None."""
+    if not token:
+        return None
+    try:
+        return await get_current_user(token=token, db=db)
+    except HTTPException:
+        return None
 
 
 def require_role(*roles: str):

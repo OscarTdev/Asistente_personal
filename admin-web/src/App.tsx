@@ -10,21 +10,18 @@ import CatalogPage from './pages/CatalogPage'
 import QuotesPage from './pages/QuotesPage'
 import QuoteDetailPage from './pages/QuoteDetailPage'
 import ClientesPage from './pages/ClientesPage'
-import PlatformClientesPage from './pages/PlatformClientesPage'
 import PagosPlanesPage from './pages/PagosPlanesPage'
 import PlataformaPage from './pages/PlataformaPage'
 import RemindersPage from './pages/RemindersPage'
 import NegocioPage from './pages/NegocioPage'
 import ServiceDataPage from './pages/ServiceDataPage'
 import GoogleCallbackPage from './pages/GoogleCallbackPage'
-import AdminPage from './pages/AdminPage'
+import PlatformClientesPage from './pages/PlatformClientesPage'
+import SetPasswordPage from './pages/SetPasswordPage'
 
-// /clientes por rol: superadmin ve sus negocios; dueño → su CRM
-function ClientesPorRol() {
-  const { user } = useAuth()
-  if (user?.is_platform_admin) {
-    return <PlatformClientesPage />
-  }
+// /crm siempre muestra el CRM del negocio (contactos y su ficha 360).
+// La vista de "negocios de la plataforma" (tenants) vive en /admin.
+function CrmPageRoute() {
   return <ClientesPage />
 }
 
@@ -36,6 +33,11 @@ function OldQuoterRedirect() {
   return <Navigate to={`/cotizador${rest}`} replace />
 }
 
+function PlatformOnlyRoute({ children }: { children: JSX.Element }) {
+  const { user } = useAuth()
+  return user?.is_platform_admin ? children : <Navigate to="/" replace />
+}
+
 function App() {
   const { user } = useAuth()
 
@@ -43,6 +45,8 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/crear-contrasena" element={<SetPasswordPage />} />
+        <Route path="/set-password" element={<Navigate to="/crear-contrasena" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     )
@@ -63,8 +67,8 @@ function App() {
           <Route path="seguimiento" element={<FollowUpPage />} />
         </Route>
 
-        {/* Clientes / CRM (rol dependiente) */}
-        <Route path="/clientes" element={<ClientesPorRol />} />
+        {/* CRM del negocio (contactos del dueño con ficha 360) — Mini CRM */}
+        <Route path="/crm" element={<CrmPageRoute />} />
 
         {/* Recordatorios (sidebar: /agenda) */}
         <Route path="/agenda" element={<RemindersPage />} />
@@ -83,15 +87,17 @@ function App() {
         <Route path="/google/callback" element={<GoogleCallbackPage />} />
 
         {/* ── Superadmin ──────────────────────────────────────────────── */}
-        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/clientes" element={<Navigate to="/crm" replace />} />
+        <Route path="/clientes-bot" element={<PlatformClientesPage />} />
+        <Route path="/admin" element={<Navigate to="/clientes-bot" replace />} />
         <Route path="/pagos" element={<PagosPlanesPage />} />
-        <Route path="/plataforma" element={<PlataformaPage />} />
+        <Route path="/plataforma" element={<PlatformOnlyRoute><PlataformaPage /></PlatformOnlyRoute>} />
         <Route path="/servicios" element={<ServiciosPage />} />
 
         {/* ── Redirecciones de compatibilidad (rutas antiguas → nuevas) ── */}
         <Route path="/servicios/quoter/*" element={<OldQuoterRedirect />} />
         <Route path="/servicios/reminders" element={<Navigate to="/agenda" replace />} />
-        <Route path="/servicios/crm" element={<Navigate to="/clientes" replace />} />
+        <Route path="/servicios/crm" element={<Navigate to="/crm" replace />} />
         <Route path="/modules" element={<Navigate to="/servicios" replace />} />
         <Route path="/catalog" element={<Navigate to="/cotizador/catalogo" replace />} />
         <Route path="/quotes" element={<Navigate to="/cotizador/cotizaciones" replace />} />

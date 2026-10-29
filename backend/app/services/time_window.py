@@ -30,3 +30,18 @@ def month_bounds(now_col: datetime) -> tuple[datetime, datetime]:
     else:
         end_col = start_col.replace(month=start_col.month + 1)
     return start_col + timedelta(hours=5), end_col + timedelta(hours=5)
+
+
+def week_bounds(now_col: datetime) -> tuple[datetime, datetime]:
+    """Ventana [inicio, fin) de la semana LOCAL que contiene now_col, en UTC.
+
+    La semana empieza el lunes (0) y termina el domingo (6).
+    Recibe la hora Colombia y devuelve los límites en UTC para consultas SQL.
+    """
+    # weekday(): lunes=0, domingo=6
+    days_since_monday = now_col.weekday()
+    start_col = (now_col - timedelta(days=days_since_monday)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    end_col = start_col + timedelta(days=7)
+    return start_col + timedelta(hours=5), end_col + timedelta(hours=5)

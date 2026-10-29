@@ -15,10 +15,12 @@ a su propio contexto desde el siguiente mensaje.
 
 import logging
 import re
+import secrets
 import unicodedata
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.channels.base import Channel
 from app.core.config import get_settings
 from app.core.nit import clean_nit, validate_nit
+from app.core.security import hash_password
 from app.models import (
     Consent,
     Contact,
@@ -33,6 +36,7 @@ from app.models import (
     Message,
     OnboardingSession,
     Tenant,
+    User,
 )
 from app.services.entitlements import apply_plan
 
@@ -77,10 +81,14 @@ _ASK_NAME = (
 )
 _ASK_CITY = "¿En qué ciudad operas? (ej: Medellín, Bogotá, Cali)"
 _ASK_EMAIL = (
-    "¿Cuál es tu correo electrónico? Te enviaremos la cotizaciones "
-    "y el acceso al panel. (Si no tienes ahora, escribe «después»)"
+    "¿Cuál es tu correo electrónico? Lo usaremos para tu acceso al panel "
+    "y para enviarte información importante."
 )
-_EMAIL_RETRY = "Ese correo no parece válido. Revísalo o escribe «después»."
+_EMAIL_RETRY = "Ese correo no parece válido. Revísalo e inténtalo de nuevo."
+_EMAIL_TAKEN = (
+    "Ese correo ya está asociado a una cuenta. Usa otro correo para que "
+    "puedas entrar a tu panel sin confusiones."
+)
 _ASK_RESPONSE_PREF = (
     "Última pregunta: ¿prefieres que te responda por 1️⃣ texto, "
     "2️⃣ audio o 3️⃣ automático? (Responde 1, 2 o 3)"
@@ -94,12 +102,49 @@ _PANEL_LINK_TEMPLATE = (
     "📅 Seguimiento de cotizaciones — escribo a tus clientes a los 3 y 7 "
     "días (con el plan Premium)\n\n"
     "Para acceder a tu panel de administración y configurar tu "
-    "catálogo, crea tu contraseña aquí (vence en 30 minutos):\n\n"
+    "catálogo, puedes continuar con Google desde aquí:\n"
+    "{login_url}\n\n"
+    "O crear una contraseña con este enlace (vence en 30 minutos):\n\n"
     "{panel_url}\n\n"
     "¿Con qué quieres empezar?"
 )
 
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+
+async def panel_access_message(db: AsyncSession, *, tenant: Tenant) -> str:
+    """Construye el enlace de acceso adecuado para el dueño del tenant.
+
+    El enlace nunca autentica por sí mismo: los usuarios existentes deben
+    iniciar sesión y los nuevos solo pueden crear su contraseña con el JWT
+    corto del onboarding.
+    """
+    settings = get_settings()
+    existing_user = (
+        await db.execute(select(User).where(User.tenant_id == tenant.id))
+    ).scalars().first()
+    bot_name = tenant.bot_name or "Aura"
+    login_url = (
+        f"{settings.panel_base_url}/login?tenant={tenant.slug}"
+        f"&bot={quote(bot_name)}"
+    )
+
+    if existing_user is not None and existing_user.is_active:
+        return (
+            f"🖥️ Este es el panel de {bot_name}:\n{login_url}\n\n"
+            f"Ingresa con tu correo: {existing_user.email}\n"
+            "Tu contraseña no se envía por WhatsApp."
+        )
+
+    token = _generate_panel_token(tenant.id)
+    setup_url = (
+        f"{settings.panel_base_url}/crear-contrasena?token={token}"
+        f"&bot={quote(bot_name)}"
+    )
+    return (
+        f"🖥️ Configura el acceso al panel de {bot_name} aquí "
+        f"(enlace válido por {PASSWORD_TOKEN_MINUTES} minutos):\n{setup_url}"
+    )
 
 
 def _slugify(value: str) -> str:
@@ -276,8 +321,11 @@ async def continue_onboarding(
             await ask(_ASK_BOT_NAME)
             return
         data["bot_name"] = answer[:30]
-        await save_step("account_type")
-        await ask(_ASK_ACCOUNT_TYPE)
+        await save_step("owner_name")
+        await ask(
+            "¿Cómo quieres que te llame yo a ti? Puede ser tu nombre o "
+            "el nombre de tu negocio."
+        )
         return
 
     # ── Paso: tipo de cuenta ────────────────────────────────────────────
@@ -291,8 +339,8 @@ async def continue_onboarding(
             return
         if "1" in choice or any(word in choice for word in ("persona", "natural", "independiente")):
             data["account_type"] = "personal"
-            await save_step("owner_name")
-            await ask(_ASK_NAME)
+            await save_step("email")
+            await ask(_ASK_EMAIL)
             return
         await ask(_ASK_ACCOUNT_TYPE)
         return
@@ -301,15 +349,23 @@ async def continue_onboarding(
     if session.step == "nit":
         if answer.lower().strip(" .") in ("despues", "después", "luego", "nose", "no sé"):
             data["nit"] = None
-            await save_step("owner_name")
-            await ask(_ASK_NAME)
+            if data.get("_legacy_order"):
+                await save_step("owner_name")
+                await ask(_ASK_NAME)
+            else:
+                await save_step("email")
+                await ask(_ASK_EMAIL)
             return
         if not validate_nit(answer):
             await ask(_NIT_RETRY)
             return
         data["nit"] = clean_nit(answer)
-        await save_step("owner_name")
-        await ask(_ASK_NAME)
+        if data.get("_legacy_order"):
+            await save_step("owner_name")
+            await ask(_ASK_NAME)
+        else:
+            await save_step("email")
+            await ask(_ASK_EMAIL)
         return
 
     # ── Paso: nombre del dueño ──────────────────────────────────────────
@@ -317,9 +373,26 @@ async def continue_onboarding(
         if not answer:
             await ask("¿Me repites tu nombre o el de tu negocio?")
             return
+        # Compatibilidad con sesiones iniciadas con el flujo anterior
+        # (bot_name → account_type → owner_name). Las nuevas sesiones nunca
+        # llegan aquí con una opción numérica.
+        if answer in ("1", "2") and "account_type" not in data:
+            data["account_type"] = "business" if answer == "2" else "personal"
+            data["_legacy_order"] = True
+            if data["account_type"] == "business":
+                await save_step("nit")
+                await ask(_ASK_NIT)
+            else:
+                await save_step("owner_name")
+                await ask(_ASK_NAME)
+            return
         data["owner_name"] = answer[:60]
-        await save_step("city")
-        await ask(_ASK_CITY)
+        if data.get("_legacy_order"):
+            await save_step("city")
+            await ask(_ASK_CITY)
+            return
+        await save_step("account_type")
+        await ask(_ASK_ACCOUNT_TYPE)
         return
 
     # ── Paso: ciudad ────────────────────────────────────────────────────
@@ -334,15 +407,17 @@ async def continue_onboarding(
 
     # ── Paso: correo ─────────────────────────────────────────────────────
     if session.step == "email":
-        if answer.lower().strip(" .") in ("despues", "después", "luego", "nose", "no sé"):
-            data["email"] = None
-            await save_step("response_pref")
-            await ask(_ASK_RESPONSE_PREF)
-            return
         if not _EMAIL_RE.match(answer):
             await ask(_EMAIL_RETRY)
             return
-        data["email"] = answer.lower()[:100]
+        email = answer.lower()[:100]
+        email_taken = (
+            await db.execute(select(User).where(User.email == email))
+        ).scalars().first()
+        if email_taken is not None:
+            await ask(_EMAIL_TAKEN)
+            return
+        data["email"] = email
         await save_step("response_pref")
         await ask(_ASK_RESPONSE_PREF)
         return
@@ -376,6 +451,18 @@ async def continue_onboarding(
         )
         db.add(new_tenant)
         await db.flush()
+        contact.name = owner_name
+        contact.email = data["email"]
+        db.add(
+            User(
+                tenant_id=new_tenant.id,
+                email=data["email"],
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+                full_name=owner_name,
+                role="admin",
+                is_active=False,
+            )
+        )
 
         # Plan trial: su cotizador queda activo con el contrato de planes
         await apply_plan(
@@ -383,6 +470,8 @@ async def continue_onboarding(
         )
 
         # Deja de ser el contacto-puerta de la plataforma
+        # IMPORTANTE: clear_identities ANTES del commit para que el siguiente
+        # mensaje del mismo número rutee al NUEVO tenant (no a plataforma)
         from app.services.identity import clear_identities
 
         await clear_identities(
@@ -394,14 +483,31 @@ async def continue_onboarding(
         contact.onboarding_state = None
         await db.commit()
 
+        # Registrar la identidad del dueño en SU nuevo tenant (kind=owner)
+        from app.services.identity import link_identity
+
+        await link_identity(
+            db,
+            tenant=new_tenant,
+            contact=contact,
+            kind="owner",
+            channel="whatsapp",
+            external_id=contact.wa_id,
+        )
+        await db.commit()
+
         # Generar el enlace de un solo uso para crear la contraseña (D7)
         settings = get_settings()
         token = _generate_panel_token(new_tenant.id)
         panel_url = f"{settings.panel_base_url}/crear-contrasena?token={token}"
-
         bot_name = data.get("bot_name", "Aura")
+        login_url = (
+            f"{settings.panel_base_url}/login?tenant={new_tenant.slug}"
+            f"&bot={quote(bot_name)}"
+        )
         await ask(_PANEL_LINK_TEMPLATE.format(
             bot_name=bot_name,
+            login_url=login_url,
             panel_url=panel_url,
         ))
         logger.info(

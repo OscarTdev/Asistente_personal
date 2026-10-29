@@ -5,11 +5,11 @@
 
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
-import Card from '../components/ui/card'
-import Button from '../components/ui/button'
-import Input from '../components/ui/input'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconArrowLeft } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconArrowLeft } from "@/components/ui/icons"
 
 // ── Configuración por servicio ─────────────────────────────────────────────
 
@@ -72,16 +72,18 @@ const CONFIG: Record<
   },
   expenses: {
     title: 'Finanzas personales',
-    subtitle: 'Tus gastos del negocio: materiales, transporte, comida, etc.',
+    subtitle:
+      'Ingresos y gastos del negocio: registra por chat o desde aquí y consulta tu cartera.',
     endpoint: 'expenses',
     columns: [
-      { key: 'description', label: 'Gasto' },
+      { key: 'type', label: 'Tipo' },
+      { key: 'description', label: 'Descripción' },
       { key: 'category', label: 'Categoría' },
       { key: 'amount', label: 'Monto' },
       { key: 'expense_date', label: 'Fecha' },
     ],
     emptyMessage:
-      'Sin gastos aún. Regístralos por chat: «gasté 20 mil en gasolina».',
+      'Sin movimientos aún. Regístralos por chat: «gasté 20 mil en gasolina» o «cobré 500 mil a Juliana».',
   },
   'site-log': {
     title: 'Seguimiento de obra',
@@ -114,6 +116,7 @@ function formatCOP(value: number): string {
 function formatCell(key: string, value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (key === 'amount') return formatCOP(Number(value))
+  if (key === 'type') return value === 'income' ? '💵 Ingreso' : '💸 Gasto'
   if (key.includes('_at') || key === 'next_due' || key === 'expense_date') {
     return formatDate(String(value))
   }
@@ -184,7 +187,7 @@ export default function ServiceDataPage({ serviceKey }: { serviceKey: string }) 
       <Card className="overflow-hidden">
         {loading ? (
           <div className="divide-y divide-linen-100">
-            {[0, 1, 2].map((i) => (
+            {[0, 1, 2].map((i: number) => (
               <div key={i} className="flex h-12 items-center gap-4 px-4">
                 <div className="skel h-4 w-1/4" />
                 <div className="skel ml-auto h-4 w-24" />
@@ -200,7 +203,7 @@ export default function ServiceDataPage({ serviceKey }: { serviceKey: string }) 
             <table className="w-full text-sm">
               <thead>
                 <tr className="thead-edge bg-linen-50 text-left">
-                  {config.columns.map((col) => (
+                  {config.columns.map((col: Column) => (
                     <th
                       key={col.key}
                       className="plate-label px-4 py-3 font-semibold"
@@ -217,7 +220,7 @@ export default function ServiceDataPage({ serviceKey }: { serviceKey: string }) 
                     key={String(row.id ?? i)}
                     className="border-b border-linen-100 transition-colors last:border-0 hover:bg-linen-50"
                   >
-                    {config.columns.map((col) => (
+                    {config.columns.map((col: Column) => (
                       <td
                         key={col.key}
                         className={`px-4 py-3 ${

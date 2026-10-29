@@ -34,7 +34,8 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 # Alcances por servicio: el mínimo para cada tarea (principio de menor
 # privilegio). Gmail solo lectura + envío; Drive solo archivos creados
-# por la app; Sheets/Docs/Forms para exportar e informes.
+# por la app; Sheets/Docs/Forms para exportar e informes; Contactos solo
+# lectura (para traer la libreta de direcciones al CRM).
 GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/gmail.readonly",
@@ -45,6 +46,7 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/forms.body",
+    "https://www.googleapis.com/auth/contacts.readonly",
 ]
 
 
@@ -60,6 +62,14 @@ class GoogleAuthError(Exception):
     """El refresh falló: el dueño debe reconectar su cuenta."""
 
 
+def google_scopes() -> list[str]:
+    """Scopes base y Keep opcional para cuentas Workspace compatibles."""
+    scopes = list(GOOGLE_SCOPES)
+    if getattr(get_settings(), "google_keep_enabled", False):
+        scopes.append("https://www.googleapis.com/auth/keep")
+    return scopes
+
+
 def google_configured() -> bool:
     settings = get_settings()
     return bool(settings.google_client_id and settings.google_client_secret)
@@ -71,20 +81,25 @@ def redirect_uri() -> str:
     return settings.google_redirect_uri or f"{settings.panel_base_url}/google/callback"
 
 
-def build_state_token(tenant_id: UUID) -> str:
+def build_state_token(
+    tenant_id: UUID, *, purpose: str = "connect", email: str | None = None
+) -> str:
     """JWT corto que ata el flujo OAuth al tenant que lo inició."""
     payload = {
         "sub": "google-oauth",
         "aud": "google-oauth",
         "tenant_id": str(tenant_id),
+        "purpose": purpose,
         "exp": datetime.now(UTC) + timedelta(minutes=10),
     }
+    if email:
+        payload["email"] = email.lower()
     return jwt.encode(
         payload, get_settings().jwt_secret, algorithm=get_settings().jwt_algorithm
     )
 
 
-def verify_state_token(state: str) -> UUID:
+def verify_state_payload(state: str) -> dict:
     """Devuelve el tenant_id del state o revienta (token inválido/expirado)."""
     try:
         payload = jwt.decode(
@@ -93,11 +108,43 @@ def verify_state_token(state: str) -> UUID:
             algorithms=[get_settings().jwt_algorithm],
             audience="google-oauth",
         )
-        if payload.get("sub") != "google-oauth":
+        if payload.get("sub") not in {"google-oauth", "google-login"}:
             raise ValueError("No es un state de Google")
-        return UUID(payload["tenant_id"])
+        return payload
     except (jwt.InvalidTokenError, KeyError, ValueError) as exc:
         raise GoogleAuthError("El enlace de conexión expiró; vuelve a conectarlo") from exc
+
+
+def verify_state_token(state: str) -> UUID:
+    return UUID(verify_state_payload(state)["tenant_id"])
+
+
+def build_login_state(email: str) -> str:
+    payload = {
+        "sub": "google-login",
+        "aud": "google-oauth",
+        "purpose": "login",
+        "email": email.lower(),
+        "exp": datetime.now(UTC) + timedelta(minutes=10),
+    }
+    return jwt.encode(
+        payload, get_settings().jwt_secret, algorithm=get_settings().jwt_algorithm
+    )
+
+
+def verify_login_state(state: str) -> str:
+    try:
+        payload = jwt.decode(
+            state,
+            get_settings().jwt_secret,
+            algorithms=[get_settings().jwt_algorithm],
+            audience="google-oauth",
+        )
+        if payload.get("sub") != "google-login" or payload.get("purpose") != "login":
+            raise ValueError("No es un state de login")
+        return str(payload["email"]).lower()
+    except (jwt.InvalidTokenError, KeyError, ValueError) as exc:
+        raise GoogleAuthError("El enlace de Google expiró; vuelve a intentarlo") from exc
 
 
 def build_authorization_url(state: str) -> str:
@@ -111,7 +158,7 @@ def build_authorization_url(state: str) -> str:
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri(),
         "response_type": "code",
-        "scope": " ".join(GOOGLE_SCOPES),
+        "scope": " ".join(google_scopes()),
         "access_type": "offline",   # pide refresh token
         "prompt": "consent",        # fuerza el refresh aunque ya existiera
         "state": state,
@@ -155,7 +202,10 @@ async def fetch_user_email(access_token: str) -> str:
         )
     if resp.status_code != 200:
         raise GoogleAuthError("No pude leer el correo de tu cuenta Google")
-    return resp.json().get("email", "")
+    data = resp.json()
+    if not data.get("verified_email"):
+        raise GoogleAuthError("Google no confirmó el correo de esta cuenta")
+    return data.get("email", "").lower()
 
 
 async def get_connection(

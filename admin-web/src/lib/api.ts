@@ -1,4 +1,4 @@
-﻿import {
+import {
   CatalogImportResult,
   CatalogItem,
   CatalogItemPayload,
@@ -12,6 +12,7 @@
   ContactPage,
   ContactUpdatePayload,
   DashboardStats,
+  RealtimeActivity,
   ExtractResponse,
   FollowUpPendingPage,
   FollowUpRunResult,
@@ -20,7 +21,10 @@
   GoogleCallbackResult,
   GoogleExportResult,
   GoogleStatus,
+  GoogleContactsStatus,
+  GoogleContactsImportResult,
   LoginResponse,
+  User,
   Module,
   PlanEntitlementItem,
   PlanPrice,
@@ -47,8 +51,10 @@
   ChannelIdentity,
   TenantUpdatePayload,
   AdminTenantContact,
+  AdminTenantContactPage,
   AdminTenantContactDetail,
   AdminTenantContactMessagesPage,
+  PlatformAdminStats,
 } from '../types'
 
 export class ApiError extends Error {
@@ -83,7 +89,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   // Sin esto, cada llamada fallida repetía el 401 en bucle (esqueletos eternos).
   if (response.status === 401) {
     localStorage.removeItem('asistente_token')
-    window.location.assign('/login')
+    localStorage.removeItem('asistente_user')
+    if (window.location.pathname !== '/login') {
+      window.location.assign('/login')
+    }
     throw new ApiError('Sesión expirada. Vuelve a entrar.', 401)
   }
 
@@ -115,6 +124,23 @@ export async function loginRequest(email: string, password: string): Promise<Log
     },
     body: JSON.stringify({ email, password }),
   })
+}
+
+export async function setPasswordRequest(token: string, password: string): Promise<any> {
+  const response = await fetch('/api/v1/auth/set-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  })
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new ApiError(errorData.detail || 'Error al configurar contraseña', response.status)
+  }
+  return response.json()
+}
+
+export async function fetchMe(): Promise<User> {
+  return apiFetch<User>('/auth/me')
 }
 
 // â”€â”€ Modules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -381,6 +407,10 @@ export function fetchDashboardStats(): Promise<DashboardStats> {
   return apiFetch<DashboardStats>('/dashboard/stats')
 }
 
+export function fetchRealtimeActivity(): Promise<RealtimeActivity> {
+  return apiFetch<RealtimeActivity>('/dashboard/realtime?window_minutes=15')
+}
+
 // â”€â”€ Planes y precios (admin de plataforma) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function fetchPlanPrices(): Promise<PlanPrice[]> {
@@ -444,9 +474,27 @@ export function fetchGoogleStatus(): Promise<GoogleStatus> {
   return apiFetch<GoogleStatus>('/google/status')
 }
 
+export function fetchGoogleContactsStatus(): Promise<GoogleContactsStatus> {
+  return apiFetch<GoogleContactsStatus>('/google-contacts/status')
+}
+
+export function importGoogleContacts(): Promise<GoogleContactsImportResult> {
+  return apiFetch<GoogleContactsImportResult>('/google-contacts/import', {
+    method: 'POST',
+  })
+}
+
 export function authorizeGoogle(): Promise<{ authorization_url: string }> {
   return apiFetch<{ authorization_url: string }>('/google/authorize', {
     method: 'POST',
+  })
+}
+
+export function authorizeGoogleLogin(email: string): Promise<{ authorization_url: string }> {
+  return apiFetch<{ authorization_url: string }>('/google/login/authorize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
   })
 }
 
@@ -488,6 +536,21 @@ export function createMonthReportDoc(): Promise<GoogleExportResult> {
 
 export function fetchAdminTenants(): Promise<TenantSummary[]> {
   return apiFetch<TenantSummary[]>('/admin/tenants')
+}
+
+export function fetchPlatformAdminStats(): Promise<PlatformAdminStats> {
+  return apiFetch<PlatformAdminStats>('/admin/stats')
+}
+
+export function updateAdminTenantStatus(
+  tenantId: string,
+  isActive: boolean
+): Promise<TenantDetail> {
+  return apiFetch<TenantDetail>(`/admin/tenants/${tenantId}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ is_active: isActive }),
+  })
 }
 
 export function fetchAdminTenant(id: string): Promise<TenantDetail> {
@@ -717,7 +780,7 @@ export function fetchAdminTenantContacts(
   search?: string,
   activeOnly: boolean = true,
   tag?: string
-): Promise<ContactPage> {
+): Promise<AdminTenantContactPage> {
   const params = new URLSearchParams({
     skip: String(skip),
     limit: String(limit),
@@ -729,7 +792,7 @@ export function fetchAdminTenantContacts(
   if (tag) {
     params.set('tag', tag)
   }
-  return apiFetch<ContactPage>(
+  return apiFetch<AdminTenantContactPage>(
     `/admin/tenants/${tenantId}/contacts?${params.toString()}`
   )
 }
@@ -756,4 +819,57 @@ export function fetchAdminTenantContactMessages(
   return apiFetch<AdminTenantContactMessagesPage>(
     `/admin/tenants/${tenantId}/contacts/${contactId}/messages?${params.toString()}`
   )
+}
+
+export function impersonateTenant(tenantId: string): Promise<LoginResponse> {
+  return apiFetch<LoginResponse>(`/admin/tenants/${tenantId}/impersonate`, {
+    method: 'POST',
+  })
+}
+
+export function generateTenantInviteLink(tenantId: string): Promise<{
+  tenant_id: string
+  tenant_name: string
+  invite_url: string
+  token: string
+  expires_in_hours: number
+}> {
+  return apiFetch<{
+    tenant_id: string
+    tenant_name: string
+    invite_url: string
+    token: string
+    expires_in_hours: number
+  }>(`/admin/tenants/${tenantId}/invite-link`, {
+    method: 'POST',
+  })
+}
+
+// ── Plataforma: configuración IA (super admin) ────────────────────────────────
+
+export interface AIConfigItem {
+  value: string
+  label: string | null
+  description: string | null
+  is_secret: boolean
+  value_type: string
+}
+
+export interface AIConfigUpdate {
+  value: string
+}
+
+export function fetchPlatformAIConfig(): Promise<Record<string, AIConfigItem>> {
+  return apiFetch<Record<string, AIConfigItem>>('/platform/ai-config')
+}
+
+export function updatePlatformAIConfig(
+  key: string,
+  value: string
+): Promise<AIConfigItem> {
+  return apiFetch<AIConfigItem>(`/platform/ai-config/${encodeURIComponent(key)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value }),
+  })
 }

@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # Modelo rápido para tareas simples (detección de intención): si no se
     # define, usa llm_model. La detección es clasificación, no conversación.
     llm_model_intent: str = ""
+    # Modelo con VISIÓN para interpretar las imágenes que el dueño envía por
+    # WhatsApp (fotos de facturas, tableros, materiales). Vacío → el bot
+    # no interpreta imágenes: solo usa el texto que las acompañe. Debe ser
+    # multimodal. Se mantiene separado porque el modelo conversacional puede
+    # ser solo de texto.
+    llm_model_vision: str = "nvidia/nemotron-3.5-super-vl-120b-a12b"
 
     # Evolution API (canal WhatsApp) — vacío → el bot no atiende (guard real)
     evolution_api_url: str = "http://127.0.0.1:8080"
@@ -78,6 +84,13 @@ class Settings(BaseSettings):
     # URI de retorno registrada en Google Cloud Console
     # (vacío → {panel_base_url}/google/callback)
     google_redirect_uri: str = ""
+    # Keep requiere Google Workspace compatible; se activa explícitamente
+    # para no romper OAuth de cuentas personales.
+    google_keep_enabled: bool = False
+
+    # Soporte: número de WhatsApp del admin de la plataforma (formato internacional sin +)
+    # Ejemplo: 573043223100 (Colombia + código país)
+    admin_support_wa_id: str = "573043223100"
 
     model_config = SettingsConfigDict(
         env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"

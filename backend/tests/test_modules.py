@@ -114,9 +114,9 @@ async def test_modules_order_sub_services_and_workspaces(
     assert data["collections"]["dev_status"] == "active"
     assert data["collections"]["workspace"] is None
 
-    # Resumen diario activo (generación + envío ya funcionan)
+    # Resumen diario activo (generación + envío ya funcionan) - vive en /agenda
     assert data["daily_summary"]["dev_status"] == "active"
-    assert data["daily_summary"]["workspace"] is None
+    assert data["daily_summary"]["workspace"] == "/agenda"
 
 
 @pytest.mark.asyncio

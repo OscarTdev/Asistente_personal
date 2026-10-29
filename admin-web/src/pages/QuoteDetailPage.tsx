@@ -3,12 +3,12 @@
 
 import { FormEvent, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import Card from '../components/ui/card'
-import Input from '../components/ui/input'
-import Modal from '../components/ui/modal'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconArrowLeft, IconDownload, IconPlus } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Input } from "../components/ui/input"
+import { Modal } from "../components/ui/modal"
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconArrowLeft, IconDownload, IconPlus } from "@/components/ui/icons"
 import { downloadQuotePdf } from '../lib/api'
 import { formatCOP, formatDate, round2 } from '../lib/format'
 import { QUOTE_STATUSES, QUOTE_STATUS_LABELS, QuoteStatusBadge } from '../lib/quoteStatus'
@@ -76,7 +76,7 @@ function QuoteItemModal({
           <Input
             id="item-description"
             value={description}
-            onChangeValue={setDescription}
+            onChange={(e) => setDescription(e.target.value)}
             placeholder="Ej: Cable THHN #12, 30 metros"
             required
           />
@@ -239,7 +239,7 @@ export default function QuoteDetailPage() {
             className="h-10 rounded-md border border-linen-300 bg-panel px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-deep disabled:opacity-50"
             aria-label="Cambiar estado"
           >
-            {QUOTE_STATUSES.map((status) => (
+            {QUOTE_STATUSES.map((status: string) => (
               <option key={status} value={status}>
                 {QUOTE_STATUS_LABELS[status]}
               </option>
@@ -256,7 +256,7 @@ export default function QuoteDetailPage() {
         </div>
       </div>
       <div className="mt-3 space-y-3">
-        <ErrorSlip message={pdfError} onDismiss={() => setPdfError(null)} />
+        <ErrorSlip message={pdfError} />
       </div>
 
       {/* Summary */}
@@ -327,7 +327,7 @@ export default function QuoteDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
+                {items.map((item: QuoteItem) => (
                   <tr
                     key={item.id}
                     className={`border-b border-linen-100 transition-colors last:border-0 hover:bg-linen-50 ${

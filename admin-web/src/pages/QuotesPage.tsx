@@ -3,16 +3,16 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Card from '../components/ui/card'
-import Input from '../components/ui/input'
-import Modal from '../components/ui/modal'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconPlus, IconX } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Input } from "../components/ui/input"
+import { Modal } from "../components/ui/modal"
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconPlus, IconX } from "@/components/ui/icons"
 import { useCreateQuote, useExtractItems, useQuotes } from '../hooks/useQuotes'
 import { formatCOP, formatDate, round2 } from '../lib/format'
 import { QUOTE_STATUSES, QUOTE_STATUS_LABELS, QuoteStatusBadge } from '../lib/quoteStatus'
-import { QuoteCreatePayload } from '../types'
+import { QuoteCreatePayload, ExtractedSuggestion, Quote } from '../types'
 
 const PAGE_SIZE = 10
 
@@ -76,7 +76,7 @@ function NewQuoteModal({
       onSuccess: (response) => {
         setItems((previous) => [
           ...previous,
-          ...response.suggestions.map((suggestion) => ({
+          ...response.suggestions.map((suggestion: ExtractedSuggestion) => ({
             description: suggestion.description,
             quantity: String(suggestion.quantity ?? 1),
             unitPrice: suggestion.unit_price != null ? String(suggestion.unit_price) : '',
@@ -192,7 +192,7 @@ function NewQuoteModal({
                   <div className="min-w-[180px] flex-1">
                     <Input
                       value={item.description}
-                      onChangeValue={(value) => updateItem(index, { description: value })}
+                      onChange={(e) => updateItem(index, { description: e.target.value })}
                       placeholder="Descripción"
                       aria-label={`Descripción del ítem ${index + 1}`}
                     />
@@ -239,7 +239,7 @@ function NewQuoteModal({
             <div className="min-w-[180px] flex-1">
               <Input
                 value={manual.description}
-                onChangeValue={(value) => setManual({ ...manual, description: value })}
+                onChange={(e) => setManual({ ...manual, description: e.target.value })}
                 placeholder="Ítem manual: descripción"
                 aria-label="Descripción del ítem manual"
               />
@@ -377,7 +377,7 @@ export default function QuotesPage() {
           className="h-11 rounded-md border border-linen-300 bg-panel px-3 text-sm text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brass-deep"
         >
           <option value="">Todas</option>
-          {QUOTE_STATUSES.map((status) => (
+          {QUOTE_STATUSES.map((status: string) => (
             <option key={status} value={status}>
               {QUOTE_STATUS_LABELS[status]}
             </option>
@@ -394,7 +394,7 @@ export default function QuotesPage() {
       <Card className="overflow-hidden">
         {isLoading ? (
           <div className="divide-y divide-linen-100">
-            {[0, 1, 2, 3, 4, 5].map((index) => (
+            {[0, 1, 2, 3, 4, 5].map((index: number) => (
               <div key={index} className="flex h-12 items-center gap-4 px-4">
                 <div className="skel h-4 w-20" />
                 <div className="skel h-4 w-24" />
@@ -415,7 +415,7 @@ export default function QuotesPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((quote) => (
+                {data.items.map((quote: Quote) => (
                   <tr
                     key={quote.id}
                     className="border-b border-linen-100 transition-colors last:border-0 hover:bg-linen-50"

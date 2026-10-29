@@ -59,3 +59,33 @@ class Channel(ABC):
         No-op por defecto.
         """
         return None
+
+    async def send_buttons(
+        self, to: str, text: str, buttons: list[dict[str, str]], footer: str | None = None
+    ) -> str | None:
+        """Envía mensaje con botones de respuesta (reply buttons).
+        
+        buttons: lista de dicts con keys 'id' y 'title'.
+        footer: texto opcional al pie.
+        """
+        raise NotImplementedError(f"{self.name} no soporta botones")
+
+    async def send_list(
+        self, to: str, text: str, button_text: str, sections: list[dict], title: str | None = None
+    ) -> str | None:
+        """Envía mensaje con lista (list message).
+        
+        sections: lista de dicts con 'title' y 'rows' (cada row con 'id', 'title', 'description').
+        button_text: texto del botón que abre la lista.
+        title: título opcional de la lista.
+        """
+        raise NotImplementedError(f"{self.name} no soporta listas")
+
+    async def send_poll(
+        self, to: str, question: str, options: list[str]
+    ) -> str | None:
+        """Envía una encuesta (poll).
+        
+        options: lista de opciones (máx 12, min 2).
+        """
+        raise NotImplementedError(f"{self.name} no soporta encuestas")

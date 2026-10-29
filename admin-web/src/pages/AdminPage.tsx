@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import {
   fetchAdminTenants,
@@ -10,6 +11,7 @@ import {
   fetchAdminMessages,
   addAdminPaymentMethod,
   createTenantCheckoutLink,
+  generateTenantInviteLink,
 } from '../lib/api'
 import type {
   TenantSummary,
@@ -17,7 +19,11 @@ import type {
   TenantCheckoutResult,
   TenantConversation,
   TenantMessage,
-} from '../types'
+  TenantPaymentMethod,
+  TenantModuleView,
+  AdminConversation,
+  AdminMessage,
+} from '@/types'
 
 const PLAN_BADGES: Record<string, string> = {
   trial: 'bg-blue-100 text-blue-800',
@@ -26,7 +32,8 @@ const PLAN_BADGES: Record<string, string> = {
 }
 
 export default function AdminPage() {
-  const { user } = useAuth()
+  const { user, impersonate } = useAuth()
+  const navigate = useNavigate()
   const [tenants, setTenants] = useState<TenantSummary[]>([])
   const [selected, setSelected] = useState<TenantDetail | null>(null)
   const [conversations, setConversations] = useState<TenantConversation[]>([])
@@ -36,6 +43,32 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [checkoutLink, setCheckoutLink] = useState<TenantCheckoutResult | null>(null)
+  const [inviteSuccess, setInviteSuccess] = useState<string | null>(null)
+
+  const handleImpersonate = async (tenantId: string) => {
+    try {
+      setSaving(true)
+      await impersonate(tenantId)
+      navigate('/')
+    } catch (e: any) {
+      setError(e.message || 'Error al entrar al panel del cliente')
+      setSaving(false)
+    }
+  }
+
+  const handleInvite = async (tenantId: string) => {
+    try {
+      setSaving(true)
+      const res = await generateTenantInviteLink(tenantId)
+      await navigator.clipboard.writeText(res.invite_url)
+      setInviteSuccess(`✓ Enlace de acceso para ${res.tenant_name} copiado al portapapeles: ${res.invite_url}`)
+      setTimeout(() => setInviteSuccess(null), 12000)
+    } catch (e: any) {
+      setError(e.message || 'Error al generar enlace de invitación')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const loadTenants = useCallback(async () => {
     setLoading(true)
@@ -168,41 +201,56 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="p-6">
+    <div className="animate-fade-in">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-stone-900">
-          Administración de la Plataforma
-        </h1>
-        <p className="mt-1 text-sm text-stone-500">
-          Gestiona tus clientes, planes, servicios y conversaciones.
-        </p>
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-2">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight" style={{ color: 'var(--color-ink)' }}>Dueños del bot</h1>
+            <p className="mt-1 text-sm" style={{ color: 'var(--color-ink-muted)' }}>
+              Negocios y personas que usan Aura. Gestiona sus planes, módulos, WhatsApp y conversaciones.
+              Sus clientes finales viven en el Mini CRM de cada negocio.
+            </p>
+          </div>
+          <span className="rounded-full px-2.5 py-1 text-[10px] font-semibold tracking-wider"
+            style={{ background: 'var(--color-brand-magenta-wash)', color: 'var(--color-brand-magenta)', border: '1px solid var(--color-brand-magenta-border)' }}>
+            Super Admin
+          </span>
+        </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md p-3 text-sm" style={{ background: 'var(--color-danger-wash)', borderColor: 'var(--color-danger-border)', color: 'var(--color-danger)', border: '1px solid' }}>
           {error}
         </div>
       )}
 
-      {loading && <p className="text-sm text-stone-500">Cargando…</p>}
+      {inviteSuccess && (
+        <div className="mb-4 rounded-md p-3 text-sm flex items-center justify-between" style={{ background: 'var(--color-ok-wash, rgba(34,197,94,0.15))', borderColor: 'var(--color-ok, #22c55e)', color: 'var(--color-ok, #22c55e)', border: '1px solid' }}>
+          <span>{inviteSuccess}</span>
+          <button type="button" onClick={() => setInviteSuccess(null)} className="ml-3 font-semibold text-xs opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
 
-      {/* Tabla de clientes */}
-      <div className="overflow-x-auto rounded-lg border border-stone-200 bg-white shadow-sm">
+      {loading && <p className="text-sm" style={{ color: 'var(--color-ink-muted)' }}>Cargando…</p>}
+
+      {/* Tabla de clientes del bot */}
+      <div className="overflow-x-auto rounded-lg" style={{ border: '1px solid var(--color-border-default)', background: 'var(--color-surface)' }}>
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-stone-200 bg-stone-50 text-left text-xs uppercase tracking-wider text-stone-500">
-              <th className="px-4 py-3">Negocio</th>
+            <tr className="border-b text-left text-xs uppercase tracking-wider" style={{ borderColor: 'var(--color-border-default)', background: 'var(--color-surface-raised)', color: 'var(--color-ink-muted)' }}>
+              <th className="px-4 py-3">Negocio / Dueño</th>
               <th className="px-4 py-3">Plan</th>
               <th className="px-4 py-3">WhatsApp</th>
               <th className="px-4 py-3">Servicios</th>
-              <th className="px-4 py-3">Contactos</th>
+              <th className="px-4 py-3">Contactos CRM</th>
               <th className="px-4 py-3">Cotizaciones</th>
               <th className="px-4 py-3">Mensajes</th>
               <th className="px-4 py-3">Tipo</th>
+              <th className="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
-            {tenants.map((t) => (
+            {tenants.map((t: TenantSummary) => (
               <tr
                 key={t.id}
                 onClick={() => loadDetail(t.id)}
@@ -236,6 +284,38 @@ export default function AdminPage() {
                   {t.account_type === 'business' ? '🏢' : '👤'}
                   {t.nit ? ` ${t.nit}` : ''}
                 </td>
+                <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleImpersonate(t.id)}
+                      disabled={saving}
+                      title="Entrar al panel de este cliente"
+                      className="rounded-md px-2.5 py-1 text-xs font-medium transition-colors"
+                      style={{
+                        background: 'var(--color-brand-magenta-wash)',
+                        color: 'var(--color-brand-magenta)',
+                        border: '1px solid var(--color-brand-magenta-border)',
+                      }}
+                    >
+                      👁️ Ver panel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInvite(t.id)}
+                      disabled={saving}
+                      title="Copiar enlace de acceso / invitación para este cliente"
+                      className="rounded-md px-2 py-1 text-xs font-medium transition-colors"
+                      style={{
+                        background: 'var(--color-raised)',
+                        color: 'var(--color-ink)',
+                        border: '1px solid var(--color-border-default)',
+                      }}
+                    >
+                      🔗 Invitar
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -245,7 +325,7 @@ export default function AdminPage() {
       {/* Detalle del cliente seleccionado */}
       {selected && (
         <div className="mt-6 rounded-lg border border-stone-200 bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between flex-wrap gap-4">
             <div>
               <h2 className="text-lg font-bold text-stone-900">
                 {selected.name}
@@ -257,12 +337,34 @@ export default function AdminPage() {
                   : 'Persona natural'}
               </p>
             </div>
-            <button
-              onClick={() => setSelected(null)}
-              className="text-sm text-stone-400 hover:text-stone-600"
-            >
-              Cerrar ✕
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleImpersonate(selected.id)}
+                disabled={saving}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, var(--color-brand-magenta), var(--color-brand-rose))',
+                  color: '#fff',
+                }}
+              >
+                👁️ Entrar a su panel (Impersonar)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInvite(selected.id)}
+                disabled={saving}
+                className="flex items-center gap-1 rounded-lg border border-stone-300 bg-stone-50 px-3 py-1.5 text-xs font-medium text-stone-700 hover:bg-stone-100"
+              >
+                🔗 Enlace de acceso
+              </button>
+              <button
+                onClick={() => setSelected(null)}
+                className="text-sm text-stone-400 hover:text-stone-600 ml-2"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Plan y estado */}
@@ -354,7 +456,7 @@ export default function AdminPage() {
             )}
             {selected.payment_methods.length > 0 && (
               <ul className="mt-3 space-y-1">
-                {selected.payment_methods.map((pm) => (
+                {selected.payment_methods.map((pm: TenantPaymentMethod) => (
                   <li key={pm.id} className="text-sm text-stone-600">
                     💳 {pm.brand} •••• {pm.last4}
                     {pm.is_default && ' (predeterminada)'}
@@ -370,7 +472,7 @@ export default function AdminPage() {
               Servicios ({selected.enabled_modules}/{selected.total_modules})
             </h3>
             <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-              {selected.modules.map((m) => (
+              {selected.modules.map((m: TenantModuleView) => (
                 <div
                   key={m.key}
                   className={`rounded-md border p-2 text-xs ${
@@ -404,7 +506,7 @@ export default function AdminPage() {
                     Sin conversaciones
                   </p>
                 ) : (
-                  conversations.map((c) => (
+                  conversations.map((c: AdminConversation) => (
                     <button
                       key={c.id}
                       onClick={() => loadMessages(selected.id, c.id)}
@@ -431,13 +533,13 @@ export default function AdminPage() {
                     Selecciona una conversación
                   </p>
                 ) : (
-                  messages.map((m) => (
+                  messages.map((m: AdminMessage) => (
                     <div
                       key={m.id}
                       className={`mb-2 max-w-[85%] rounded-lg px-3 py-2 text-sm ${
                         m.direction === 'in'
                           ? 'ml-0 bg-white text-stone-800'
-                          : 'ml-auto bg-emerald-100 text-stone-800'
+                          : 'ml-auto bg-emerald-50 text-emerald-900'
                       }`}
                     >
                       {m.content || `[${m.type}]`}

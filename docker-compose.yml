@@ -33,6 +33,7 @@ services:
 
   evolution:
     # Versión fijada (no latest): builds reproducibles
+    # 2.4.x exige licencia → última versión libre: v2.3.7 (incluye fixes @lid)
     image: evoapicloud/evolution-api:v2.3.7
     container_name: asistente_evolution
     restart: always

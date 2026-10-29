@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.deps import get_current_user
 from app.core.database import get_db
+from app.core.rate_limit import login_rate_limiter
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -54,13 +56,15 @@ async def set_password(
 
     tenant_id = UUID(payload["tenant_id"])
 
-    # ¿Ya existe un usuario para este tenant? No duplicar
+    # El onboarding crea el usuario con el correo real, pero inactivo.
+    # El enlace solo puede activar esa cuenta una vez; una cuenta activa
+    # requiere el flujo normal de recuperación de contraseña.
     existing = (
         await db.execute(
             select(User).where(User.tenant_id == tenant_id)
         )
     ).scalars().first()
-    if existing is not None:
+    if existing is not None and existing.is_active:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ya existe un usuario para esta cuenta",
@@ -74,28 +78,57 @@ async def set_password(
             status_code=status.HTTP_404_NOT_FOUND, detail="Cuenta no encontrada"
         )
 
-    user = User(
-        tenant_id=tenant_id,
-        email=f"owner@{tenant.slug}.local",  # placeholder: el dueño lo cambia en el panel
-        password_hash=hash_password(body.password),
-        full_name=tenant.name,
-        role="admin",
-        is_active=True,
-    )
-    db.add(user)
+    if existing is not None:
+        existing.password_hash = hash_password(body.password)
+        existing.is_active = True
+        user = existing
+        status_text = "updated"
+    else:
+        user = User(
+            tenant_id=tenant_id,
+            email=f"owner@{tenant.slug}.local",  # placeholder: el dueño lo cambia en el panel
+            password_hash=hash_password(body.password),
+            full_name=tenant.name,
+            role="admin",
+            is_active=True,
+        )
+        db.add(user)
+        status_text = "created"
+
     await db.commit()
+    await db.refresh(user)
+
+    access_token = create_access_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        role=user.role,
+    )
 
     return {
-        "status": "created",
+        "status": status_text,
         "tenant": tenant.slug,
-        "message": "Contraseña creada. Ya puedes iniciar sesión en el panel.",
+        "access_token": access_token,
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role,
+            "tenant_id": str(user.tenant_id),
+            "bot_name": tenant.bot_name,
+            "tenant_name": tenant.name,
+            "plan": tenant.plan,
+            "is_platform_admin": user.is_platform_admin,
+        },
+        "message": "Contraseña guardada con éxito.",
     }
 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(
     request: LoginRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
+    _rate_limit: None = Depends(login_rate_limiter),
 ):
     """Autentica un usuario y devuelve un access token.
 
@@ -103,6 +136,7 @@ async def login(
       revelar cuál falló).
     - Email en varios tenants: 400 (supuesto documentado de F1; sin header
       de tenant en el login).
+    - Rate limited: 5 intentos por IP cada 5 minutos.
     """
     result = await db.execute(select(User).where(User.email == request.email))
     users = result.scalars().all()
@@ -163,6 +197,42 @@ async def login(
             role=user.role,
             tenant_id=user.tenant_id,
             bot_name=tenant.bot_name,
+            tenant_name=tenant.name,
+            plan=tenant.plan,
             is_platform_admin=user.is_platform_admin,
+            is_impersonating=False,
         ),
+    )
+
+
+@router.get("/me", response_model=UserPublic)
+async def get_me(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Devuelve los datos del usuario en sesión, incluyendo tenant actual y plan."""
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.id == current_user.tenant_id))
+    ).scalar_one_or_none()
+
+    is_impersonating = getattr(current_user, "is_impersonating", False)
+    bot_name = getattr(current_user, "bot_name", tenant.bot_name if tenant else "Aura")
+    tenant_name = getattr(
+        current_user, "target_tenant_name", tenant.name if tenant else None
+    )
+    plan = getattr(
+        current_user, "target_tenant_plan", tenant.plan if tenant else None
+    )
+
+    return UserPublic(
+        id=current_user.id,
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role,
+        tenant_id=current_user.tenant_id,
+        bot_name=bot_name,
+        tenant_name=tenant_name,
+        plan=plan,
+        is_platform_admin=current_user.is_platform_admin,
+        is_impersonating=is_impersonating,
     )

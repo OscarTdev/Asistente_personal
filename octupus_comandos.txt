@@ -1,0 +1,4 @@
+• /octo:council: Convoca un panel de modelos para evaluar e implementar una propuesta de código garantizando que no haya cabos sueltos.
+• /octo:debate: Pone a discutir a dos arquitecturas de IA diferentes sobre cuál es el mejor enfoque técnico para resolver tu problema.
+• /octo:research: Realiza una investigación profunda del repositorio antes de proponer cambios estructurados.
+• /octo:review: Examina el código escrito buscando fallas, vulnerabilidades o inconsistencias lógicas cruzando los criterios de varias IA.

@@ -35,3 +35,11 @@ class Note(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+    google_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    google_external_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    google_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    google_sync_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="local"
+    )

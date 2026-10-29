@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,7 +31,19 @@ class Reminder(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="pending"
     )
-    # Fecha en que el bot envió el recordatorio
+    # Fecha en que el bot envió el recordatorio principal
     sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Pre-notificaciones enviadas (2h antes y 30min antes)
+    pre_notified_2h: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    pre_notified_30m: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # Evento equivalente en Google Calendar, si la cuenta está conectada.
+    google_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    google_sync_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="local"
     )

@@ -1,6 +1,6 @@
 # Asistente Personal (Aura) — Estado Real del Proyecto
 
-## 16 capacidades construidas y funcionando (14 módulos en el registro)
+## 15 servicios activos + 3 módulos transversales (18 módulos en el registro)
 
 | # | Servicio | Comando por chat | Estado |
 |---|---|---|---|
@@ -8,7 +8,7 @@
 | 2 | **Seguimiento de cotizaciones** | Automático a los 3 y 7 días, detección de respuesta | ✅ |
 | 3 | **CRM (contactos)** | "Busca el contacto de Juliana" | ✅ |
 | 4 | **Recordatorios y agenda** | "Recuérdame llamar a Juliana el jueves" | ✅ |
-| 5 | **Notas** | "Guarda una nota: comprar 20m de cable" | ✅ |
+| 5 | **Notas por voz/texto** | "Guarda una nota: comprar 20m de cable" | ✅ |
 | 6 | **Transcripción de voz (STT)** | Envías un audio → lo transcribe y procesa | ✅ |
 | 7 | **Cuenta de cobro** | "Cuenta de cobro para Juliana por 500 mil" → CC-0001 | ✅ |
 | 8 | **Cobro de cartera** | "Cobrale a Juliana 450 mil" → link de MercadoPago | ✅ |
@@ -20,19 +20,20 @@
 | 14 | **Seguimiento de obra** | "Abre obra para Juliana" / "Registro: se instaló..." | ✅ |
 | 15 | **Rentabilidad** | "Rentabilidad del trabajo de Juliana" | ✅ |
 | 16 | **Correo y calendario (Google)** | "Resumime el correo" / "Qué tengo hoy" / "Pasa mis gastos a una hoja" | ✅ |
+| 17 | **Resumen diario proactivo** | "Qué tengo hoy" a las 7am automático | ✅ |
+| 18 | **Notas por voz + tareas** | Audio → nota estructurada con fecha | ✅ |
 
 ## Infraestructura
 
 | Pieza | Detalle |
 |---|---|
-| **PostgreSQL 16** | 36 tablas, pgvector + pg_trgm, 15 migraciones |
-| **Redis** | Debounce 5s, pub/sub de eventos, sesiones |
+| **PostgreSQL 16** | 39 tablas, pgvector + pg_trgm, **29 migraciones** |
+| **Redis** | Debounce 5s, pub/sub de eventos, sesiones, rate-limit login |
 | **Evolution API v2** | WhatsApp (instancia única compartido) |
 | **MercadoPago** | Checkout Pro + webhooks con firma HMAC, idempotencia |
-| **Groq** | Whisper large-v3 (STT, gratis) |
+| **Groq** | Whisper large-v3 (STT) + Llama 3.1 70B/8B (LLM, gratis) |
 | **Edge TTS** | Voz es-CO-SalomeNeural (gratis) |
-| **NVIDIA NIM** | LLM compatible OpenAI (extracción, router de intenciones) |
-| **Panel React** | Dashboard, catálogo, cotizaciones, CRM, admin |
+| **Panel React** | Dashboard, catálogo, cotizaciones, CRM, admin (Vite + Tailwind v4) |
 
 ## 19 intenciones del router
 
@@ -82,10 +83,10 @@ chat → Conversación general
 |---|---|
 | **Credenciales Google** | Crear el OAuth client en Google Cloud Console y poner GOOGLE_CLIENT_ID/SECRET en .env (guía: docs/GOOGLE.md) |
 | **Google Maps** | Requiere API key propia (no OAuth) — pendiente |
-| **Resumen diario** | "Qué tengo hoy" al despertar (ya construido en backend por otra sesión) |
-| **TTS** | Responder en voz (Edge TTS ya instalado, falta activar respuesta) |
-| **Cola ARQ** | Migrar workers a ARQ para producción (el debounce ya funciona en asyncio) |
-| **CI** | GitHub Actions con Postgres + Redis, lint, types, tests |
+| **TTS respuesta** | Responder en voz (Edge TTS instalado, falta activar en orquestador) |
+| **Cola ARQ** | Migrar workers a ARQ para producción (el debounce ya funciona en asyncio; background tasks en main.py son provisional) |
+| **Dockerfile prod** | Multi-stage Dockerfile para backend + frontend |
+| **Rotar claves MP** | Credenciales de producción de MercadoPago en .env local — pendiente rotar |
 
 ## Fase Google: construida ✅ (commits 392182a y siguientes)
 

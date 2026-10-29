@@ -24,12 +24,14 @@ from app.models import (
     Conversation,
     Expense,
     GoogleConnection,
+    Note,
     PendingAction,
     Tenant,
     User,
 )
 from app.schemas.assistant import AssistantIntent
 from app.services import google_handlers, google_oauth, orchestrator
+from app.services import notes as notes_service
 
 
 def _headers(user: User) -> dict[str, str]:
@@ -230,6 +232,40 @@ async def test_callback_success_saves_connection(
     assert conn.is_active is True
 
 
+async def test_google_login_activates_matching_account(
+    client: AsyncClient,
+    admin_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Google autentica solo el correo que el usuario escribió en el panel."""
+    state = google_oauth.build_login_state(admin_user.email)
+
+    async def fake_exchange(code: str) -> dict:
+        return {
+            "access_token": "login-at",
+            "refresh_token": None,
+            "expires_in": 3600,
+            "scope": "email",
+        }
+
+    async def fake_email(token: str) -> str:
+        return admin_user.email
+
+    monkeypatch.setattr(google_oauth, "exchange_code", fake_exchange)
+    monkeypatch.setattr(google_oauth, "fetch_user_email", fake_email)
+
+    response = await client.post(
+        "/api/v1/google/callback",
+        json={"code": "g" * 20, "state": state},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["authenticated"] is True
+    assert data["access_token"]
+    assert data["user"]["email"] == admin_user.email
+
+
 async def test_disconnect_removes_connection(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -322,6 +358,79 @@ async def test_sheets_export_creates_sheet(
     assert calls["values"][0] == ["Fecha", "Descripción", "Categoría", "Valor (COP)"]
     # COP entero: el total no arrastra ".00" (fix de la auditoría)
     assert calls["values"][-1] == ["", "", "TOTAL", "45000"]
+
+
+async def test_reminder_syncs_and_can_be_completed(
+    db_session: AsyncSession, tenant: Tenant
+):
+    await _add_connection(db_session, tenant)
+    calls: list[str] = []
+
+    async def fake_create(*args, **kwargs):
+        calls.append("create")
+        return {"id": "event-1"}
+
+    async def fake_update(*args, **kwargs):
+        calls.append("update")
+        return {}
+
+    from app.services import google_actions as actions_module
+
+    original_create = actions_module.create_event
+    original_update = actions_module.update_event
+    actions_module.create_event = fake_create  # type: ignore[assignment]
+    actions_module.update_event = fake_update  # type: ignore[assignment]
+    try:
+        reminder = await notes_service.save_reminder(
+            db_session,
+            tenant_id=tenant.id,
+            content="Llamar a Juliana",
+            remind_at=datetime.now(UTC) + timedelta(hours=2),
+        )
+        await notes_service.sync_reminder_to_google(db_session, reminder)
+        updated = await notes_service.set_reminder_status(
+            db_session,
+            tenant_id=tenant.id,
+            reminder_id=reminder.id,
+            status="done",
+        )
+    finally:
+        actions_module.create_event = original_create
+        actions_module.update_event = original_update
+
+    assert updated is not None
+    assert updated.google_event_id == "event-1"
+    assert updated.status == "done"
+    assert calls == ["create", "update"]
+
+
+async def test_note_sync_uses_google_provider(
+    db_session: AsyncSession, tenant: Tenant
+):
+    await _add_connection(db_session, tenant)
+    note = Note(tenant_id=tenant.id, content="Comprar cable")
+    db_session.add(note)
+    await db_session.commit()
+
+    async def fake_note(*args, **kwargs):
+        return {
+            "provider": "docs",
+            "external_id": "doc-1",
+            "url": "https://docs.google.com/document/d/doc-1",
+        }
+
+    from app.services import google_actions as actions_module
+
+    original = actions_module.create_note
+    actions_module.create_note = fake_note  # type: ignore[assignment]
+    try:
+        await notes_service.sync_note_to_google(db_session, note)
+    finally:
+        actions_module.create_note = original
+
+    assert note.google_provider == "docs"
+    assert note.google_external_id == "doc-1"
+    assert note.google_sync_status == "synced"
 
 
 # ── Orquestador: handlers de chat ────────────────────────────────────────────

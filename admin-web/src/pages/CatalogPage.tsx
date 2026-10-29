@@ -2,13 +2,13 @@
 // pine desk edge, changes held until seen, destructive actions isolated.
 
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import Card from '../components/ui/card'
-import Input from '../components/ui/input'
-import Modal from '../components/ui/modal'
-import Switch from '../components/ui/switch'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconPlus, IconUpload } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Input } from "../components/ui/input"
+import { Modal } from "../components/ui/modal"
+import { Switch } from "../components/ui/switch"
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconPlus, IconUpload } from "@/components/ui/icons"
 import {
   useCatalog,
   useCreateCatalogItem,
@@ -95,7 +95,7 @@ function CatalogItemModal({
           <Input
             id="catalog-name"
             value={form.name}
-            onChangeValue={(value) => setForm({ ...form, name: value })}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Ej: Tomacorriente doble"
             required
           />
@@ -107,7 +107,7 @@ function CatalogItemModal({
           <Input
             id="catalog-description"
             value={form.description}
-            onChangeValue={(value) => setForm({ ...form, description: value })}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Opcional"
           />
         </div>
@@ -119,7 +119,7 @@ function CatalogItemModal({
             <Input
               id="catalog-unit"
               value={form.unit}
-              onChangeValue={(value) => setForm({ ...form, unit: value })}
+              onChange={(e) => setForm({ ...form, unit: e.target.value })}
               placeholder="unidad, metro, hora…"
             />
           </div>
@@ -287,27 +287,27 @@ export default function CatalogPage() {
         <div className="w-full max-w-xs">
           <Input
             value={search}
-            onChangeValue={(value) => setSearch(value)}
+            onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar por nombre…"
             aria-label="Buscar en el catálogo"
           />
         </div>
         <label className="flex items-center gap-2.5 text-sm text-ink-soft">
-          <Switch checked={showInactive} onChange={setShowInactive} label="Mostrar ítems inactivos" />
+          <Switch checked={showInactive} onCheckedChange={(checked) => setShowInactive(checked)} />
           Mostrar inactivos
         </label>
       </div>
 
       {/* Errors as persistent errata slips */}
       <div className="mb-4 space-y-3">
-        <ErrorSlip message={error?.message ?? actionError} onDismiss={() => setActionError(null)} />
+        <ErrorSlip message={error?.message ?? actionError} />
       </div>
 
       {/* The book */}
       <Card className="overflow-hidden">
         {isLoading ? (
           <div className="divide-y divide-linen-100">
-            {[0, 1, 2, 3, 4, 5].map((index) => (
+            {[0, 1, 2, 3, 4, 5].map((index: number) => (
               <div key={index} className="flex h-12 items-center gap-4 px-4">
                 <div className="skel h-4 w-1/3" />
                 <div className="skel ml-auto h-4 w-20" />
@@ -329,7 +329,7 @@ export default function CatalogPage() {
                 </tr>
               </thead>
               <tbody>
-                {data.items.map((item) => (
+                {data.items.map((item: CatalogItem) => (
                   <tr
                     key={item.id}
                     className={`border-b border-linen-100 transition-colors last:border-0 hover:bg-linen-50 ${

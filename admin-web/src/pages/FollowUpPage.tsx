@@ -2,10 +2,11 @@
 // vive aquí (no en la lista de Servicios) porque es parte de este workspace.
 
 import { useState } from 'react'
-import Card from '../components/ui/card'
-import Button from '../components/ui/button'
-import Switch from '../components/ui/switch'
-import ErrorSlip from '../components/ui/error-slip'
+import { FollowUpPendingItem } from '../types'
+import { Card } from "../components/ui/card"
+import { Button } from "../components/ui/button"
+import { Switch } from "../components/ui/switch"
+import { ErrorSlip } from "../components/ui/error-slip"
 import { useAuth } from '../auth/AuthContext'
 import { useFollowupPending, useRunFollowup } from '../hooks/useFollowup'
 import { useModules, useToggleModule } from '../hooks/useModules'
@@ -79,12 +80,14 @@ export default function FollowUpPage() {
               quietas.
             </p>
           </div>
-          <Switch
-            checked={followUpModule.is_enabled}
-            disabled={toggling}
-            onChange={handleToggle}
-            label="Encender o apagar el seguimiento"
-          />
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={followUpModule.is_enabled}
+              disabled={toggling}
+              onCheckedChange={handleToggle}
+            />
+            <span className="text-sm" style={{ color: 'var(--color-ink)' }}>Encender o apagar el seguimiento</span>
+          </div>
         </Card>
       )}
 
@@ -108,7 +111,7 @@ export default function FollowUpPage() {
           {runResult && (
             <div className="ficha px-4 py-3 text-sm text-ink-soft">{runResult}</div>
           )}
-          <ErrorSlip message={runFollowup.error?.message ?? null} onDismiss={() => setRunResult(null)} />
+          <ErrorSlip message={runFollowup.error?.message ?? null} />
         </div>
       )}
 
@@ -122,7 +125,7 @@ export default function FollowUpPage() {
       <Card className="overflow-hidden">
         {isLoading ? (
           <div className="divide-y divide-linen-100">
-            {[0, 1, 2, 3, 4].map((index) => (
+            {[0, 1, 2, 3, 4].map((index: number) => (
               <div key={index} className="flex h-12 items-center gap-4 px-4">
                 <div className="skel h-4 w-1/4" />
                 <div className="skel h-4 w-20" />
@@ -143,7 +146,7 @@ export default function FollowUpPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
+                {items.map((item: FollowUpPendingItem) => (
                   <tr
                     key={item.quote_id}
                     className="border-b border-linen-100 transition-colors last:border-0 hover:bg-linen-50"

@@ -28,7 +28,8 @@ Piensa cada módulo como una habilidad del mismo asistente. Los mejores son los 
 ## Módulos de asistente personal general
 
 - **Correo y calendario (Gmail y Google Calendar)**: resumir el correo, proponer horarios, crear eventos. Siempre con confirmación humana antes de enviar algo.
-- **Finanzas personales**: gastos por voz o foto de recibo y resumen mensual.
+- **Finanzas personales**: ingresos y gastos por voz («cobré 500 mil a Juliana», «gasté 45 mil en cable»), cartera con balance en vivo («cuánto tengo») y resúmenes por día/semana/mes.
+- **Búsqueda en internet (web_search)**: «busca en internet el precio del cobre» trae resultados de DuckDuckGo al chat; «navega a [URL]» o «abre 2» (resultado de la última búsqueda) leen la página y traen el contenido. Sin API keys.
 - **Búsqueda y consultas**: precios, fichas técnicas, normativa.
 - **Traducción y redacción**: mensajes a clientes con buen tono.
 

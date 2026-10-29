@@ -24,6 +24,7 @@ SHEETS_BASE = "https://sheets.googleapis.com/v4/spreadsheets"
 DOCS_BASE = "https://docs.googleapis.com/v1/documents"
 DRIVE_BASE = "https://www.googleapis.com/drive/v3/files"
 FORMS_BASE = "https://forms.googleapis.com/v1/forms"
+PEOPLE_BASE = "https://people.googleapis.com/v1"
 
 COLOMBIA_TZ = "America/Bogota"
 
@@ -157,6 +158,57 @@ async def calendar_create_event(
         event["description"] = description
     return await _request(
         "POST", f"{CALENDAR_BASE}/events", access_token, json=event
+    )
+
+
+async def calendar_update_event(
+    access_token: str,
+    *,
+    event_id: str,
+    summary: str,
+    start_iso: str,
+    end_iso: str,
+    description: str | None = None,
+) -> dict:
+    """Actualiza un evento creado por Aura."""
+    event: dict[str, Any] = {
+        "summary": summary,
+        "start": {"dateTime": start_iso, "timeZone": COLOMBIA_TZ},
+        "end": {"dateTime": end_iso, "timeZone": COLOMBIA_TZ},
+    }
+    if description:
+        event["description"] = description
+    return await _request(
+        "PUT",
+        f"{CALENDAR_BASE}/events/{event_id}",
+        access_token,
+        json=event,
+    )
+
+
+async def calendar_delete_event(access_token: str, *, event_id: str) -> None:
+    """Elimina el evento externo asociado a un recordatorio."""
+    await _request(
+        "DELETE",
+        f"{CALENDAR_BASE}/events/{event_id}",
+        access_token,
+    )
+
+
+# ── Keep / Docs notes ──────────────────────────────────────────────────────
+
+KEEP_BASE = "https://keep.googleapis.com/v1"
+
+
+async def keep_create_note(
+    access_token: str, *, title: str, text: str
+) -> dict:
+    """Crea una nota de texto en Google Keep (Workspace compatible)."""
+    return await _request(
+        "POST",
+        f"{KEEP_BASE}/notes",
+        access_token,
+        json={"title": title, "body": {"text": {"text": text}}},
     )
 
 
@@ -296,3 +348,28 @@ async def forms_create_satisfaction_survey(
         "url": data.get("responderUri", ""),
         "edit_url": f"https://docs.google.com/forms/d/{form_id}/edit",
     }
+
+
+# ── People (Contacts) ─────────────────────────────────────────────────────────
+
+
+async def people_list_connections(
+    access_token: str,
+    *,
+    page_size: int = 500,
+    person_fields: str = "names,phoneNumbers,emailAddresses",
+) -> list[dict]:
+    """Lista los contactos del dueño (People API).
+
+    Requiere scope: https://www.googleapis.com/auth/contacts.readonly
+    """
+    data = await _request(
+        "GET",
+        f"{PEOPLE_BASE}/people/me/connections",
+        access_token,
+        params={
+            "pageSize": page_size,
+            "personFields": person_fields,
+        },
+    )
+    return data.get("connections", [])

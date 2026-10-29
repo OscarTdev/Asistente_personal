@@ -3,11 +3,11 @@
 // auditoría de la plataforma.
 
 import { useState } from 'react'
-import Card from '../components/ui/card'
-import Button from '../components/ui/button'
-import Input from '../components/ui/input'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconPower, IconWifi } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconPower, IconWifi } from "@/components/ui/icons"
 import { useAuth } from '../auth/AuthContext'
 import {
   useConnectWhatsapp,
@@ -199,7 +199,7 @@ export default function PlataformaPage() {
               <Input
                 id="test-number"
                 value={testNumber}
-                onChangeValue={(value) => setTestNumber(value)}
+                onChange={(e) => setTestNumber(e.target.value)}
                 placeholder="573001112233"
                 aria-label="Número de destino"
               />
@@ -211,7 +211,7 @@ export default function PlataformaPage() {
               <Input
                 id="test-text"
                 value={testText}
-                onChangeValue={setTestText}
+                onChange={(e) => setTestText(e.target.value)}
                 aria-label="Mensaje de prueba"
               />
             </div>

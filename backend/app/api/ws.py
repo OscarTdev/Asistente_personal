@@ -77,6 +77,8 @@ async def events_socket(
             bot_name = tenant.bot_name
         # ── la sesión de BD ya está cerrada; el loop no la necesita ──
 
+        logger.info("WebSocket conectado para tenant %s (%s)", tenant_id, bot_name)
+
         await websocket.send_text(
             json.dumps(
                 {
@@ -91,6 +93,7 @@ async def events_socket(
         channel_name = events_channel(tenant_id)
         pubsub = redis_client.pubsub()
         await pubsub.subscribe(channel_name)
+        logger.info("WebSocket suscrito a canal %s", channel_name)
 
         async def redis_listener() -> None:
             try:
@@ -99,6 +102,11 @@ async def events_socket(
                         ignore_subscribe_messages=True, timeout=1.0
                     )
                     if message and message["type"] == "message":
+                        logger.debug(
+                            "Evento recibido en canal %s: %s",
+                            channel_name,
+                            str(message["data"])[:100],
+                        )
                         await websocket.send_text(message["data"])
             except asyncio.CancelledError:
                 pass
@@ -109,7 +117,7 @@ async def events_socket(
             while True:
                 await websocket.receive_text()
         except WebSocketDisconnect:
-            pass
+            logger.info("WebSocket desconectado para tenant %s", tenant_id)
         finally:
             listener_task.cancel()
             try:
@@ -118,6 +126,7 @@ async def events_socket(
                 pass
             await pubsub.unsubscribe(channel_name)
             await pubsub.aclose()
+            logger.info("WebSocket cleanup completado para tenant %s", tenant_id)
     except WebSocketDisconnect:
         pass
     except Exception:

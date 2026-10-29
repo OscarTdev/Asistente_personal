@@ -14,7 +14,6 @@ from sqlalchemy import select, text
 from app.core.database import SessionFactory
 from app.models import ChannelIdentity, Contact, Conversation, Tenant
 
-
 JH_WHAID = "57321933514"
 JH_NAME = "Jhoymar"
 
@@ -94,12 +93,12 @@ async def main() -> None:
                 contact_id=jh_personal.id,
             )
             db.add(identity)
-            print(f"[OK] ChannelIdentity creada en personal")
+            print("[OK] ChannelIdentity creada en personal")
         else:
             # Actualizar para asegurar que apunte al contacto correcto
             identity.kind = "contact"
             identity.contact_id = jh_personal.id
-            print(f"[INFO] ChannelIdentity actualizada en personal")
+            print("[INFO] ChannelIdentity actualizada en personal")
 
         await db.commit()
 
@@ -123,7 +122,10 @@ async def main() -> None:
         )
         print(f"\n[LIST] Identidades para {JH_WHAID}:")
         for r in rows:
-            print(f"  - {r['tenant']}: kind={r['kind']}, contact={r['name']} ({r['wa_id']}), active={r['is_active']}")
+            print(
+                f"  - {r['tenant']}: kind={r['kind']}, "
+                f"contact={r['name']} ({r['wa_id']}), active={r['is_active']}"
+            )
 
 
 asyncio.run(main())

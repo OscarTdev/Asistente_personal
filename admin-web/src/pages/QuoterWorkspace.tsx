@@ -2,7 +2,7 @@
 // asistente viven aquí, como pestañas del mismo mostrador.
 
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { IconArrowLeft } from '../components/ui/icons'
+import { IconArrowLeft } from "@/components/ui/icons"
 
 const tabs = [
   { to: '/cotizador/catalogo', label: 'Catálogo de precios' },
@@ -30,7 +30,7 @@ export default function QuoterWorkspace() {
       </div>
 
       <nav className="mt-6 flex gap-1 border-b border-linen-200">
-        {tabs.map((tab) => (
+        {tabs.map((tab: { to: string; label: string }) => (
           <NavLink
             key={tab.to}
             to={tab.to}

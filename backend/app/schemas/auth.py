@@ -19,7 +19,10 @@ class UserPublic(BaseModel):
     role: str
     tenant_id: UUID
     bot_name: str
+    tenant_name: str | None = None
+    plan: str | None = None
     is_platform_admin: bool = False
+    is_impersonating: bool = False
 
 
 class LoginResponse(BaseModel):

@@ -153,6 +153,15 @@ AVAILABLE_MODULES: list[ModuleDefinition] = [
         ),
         "category": "general",
     },
+    {
+        "key": "web_search",
+        "name": "Búsqueda en internet",
+        "description": (
+            "«Busca el precio del cobre» o «navega a un enlace»: el bot "
+            "consulta internet y trae la información al chat."
+        ),
+        "category": "general",
+    },
 ]
 
 # Servicios ya construidos; el resto se listan como "En desarrollo"
@@ -172,6 +181,7 @@ DEV_STATUS: dict[str, str] = {
     "profitability": "active",  # costo real vs lo cotizado
     "email_calendar": "active", # Google Workspace: Gmail, Calendar, Sheets, Docs, Drive, Forms
     "daily_summary": "active", # resumen diario proactivo (generación + envío ya funcionan)
+    "web_search": "active",  # búsqueda DuckDuckGo + lector de páginas
 }
 
 # Workspace del panel para servicios activos (donde vive "Entrar").
@@ -185,11 +195,18 @@ WORKSPACE_ROUTE: dict[str, str] = {
     "warranties": "/garantias",
     "personal_finance": "/finanzas",
     "site_log": "/obra",
+    "voice_notes": "/agenda",       # vive dentro de agenda (notas + recordatorios)
+    "email_calendar": "/google",    # integración Google Workspace
+    "daily_summary": "/agenda",     # resumen diario en agenda
 }
 
 # Sub-servicios: viven DENTRO del workspace de su servicio padre, no como
 # carta propia en la lista de Servicios (p. ej. el seguimiento del cotizador)
-PARENT_MODULE: dict[str, str] = {"follow_up": "quoter"}
+PARENT_MODULE: dict[str, str] = {
+    "follow_up": "quoter",
+    "voice_notes": "reminders",     # notas por voz viven dentro de la agenda
+    "daily_summary": "reminders",   # resumen diario en la agenda
+}
 
 
 def module_dev_status(key: str) -> str:

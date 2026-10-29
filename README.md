@@ -22,7 +22,7 @@ En desarrollo: transcripciÃ³n de audios (STT), recordatorios y agenda, pÃ¡gi
 
 ## Puesta en marcha
 
-1. Copiar `.env.example` a `.env` y completar: `JWT_SECRET` (32+ caracteres; el texto de ejemplo no arranca), `LLM_API_KEY` (NVIDIA NIM u OpenRouter), `EVOLUTION_API_KEY`, `WEBHOOK_SECRET`.
+1. Copiar `.env.example` a `.env` y completar: `JWT_SECRET` (32+ caracteres; el texto de ejemplo no arranca), `LLM_API_KEY` (NVIDIA NIM u OpenRouter), `LLM_MODEL_VISION` con un modelo multimodal habilitado por tu proveedor, `EVOLUTION_API_KEY`, `WEBHOOK_SECRET`. Sin una clave válida y un modelo de visión, las imágenes se guardan pero no se describen.
 2. `docker compose up -d` â€” Postgres queda en `127.0.0.1:5433` (el 5432 lo ocupa el PostgreSQL local de Windows), Redis en 6379 y Evolution en 8080, todos solo en localhost.
 3. Backend:
    ```powershell
@@ -41,6 +41,10 @@ En desarrollo: transcripciÃ³n de audios (STT), recordatorios y agenda, pÃ¡gi
    npm run dev
    ```
 5. Conectar WhatsApp: abrir http://localhost:5173 â†’ ConexiÃ³n â†’ escanear el QR. Al conectar, configurar el webhook de Evolution con la cabecera `x-webhook-secret` (ver `backend/app/api/deps.py`).
+
+Para usar el panel mediante un tÃºnel de desarrollo, define una lista explÃ­cita
+de hosts permitidos antes de iniciar Vite, por ejemplo:
+`VITE_ALLOWED_HOSTS=mi-subdominio.ngrok-free.app`.
 
 ## Tests y lint
 

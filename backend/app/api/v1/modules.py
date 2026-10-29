@@ -10,7 +10,7 @@ import re
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, require_role
@@ -36,15 +36,25 @@ def _slugify(text: str) -> str:
 
 
 async def _ensure_initialized(db: AsyncSession, tenant_id: UUID) -> None:
-    """Si el tenant no tiene ningún módulo registrado, inicializa los por defecto."""
-    count_stmt = (
-        select(func.count())
-        .select_from(TenantModule)
-        .where(TenantModule.tenant_id == tenant_id)
-    )
-    count = (await db.execute(count_stmt)).scalar_one()
-    if count == 0:
-        for m in AVAILABLE_MODULES:
+    """Garantiza una fila por módulo del registro.
+
+    - Tenant nuevo: crea todos (solo el cotizador encendido).
+    - Tenant existente: agrega los módulos NUEVOS del registro que falten
+      (apagados por defecto: el dueño los enciende desde el panel).
+    """
+    existing_rows = (
+        await db.execute(
+            select(TenantModule.module_key, TenantModule.is_enabled).where(
+                TenantModule.tenant_id == tenant_id
+            )
+        )
+    ).all()
+    existing_keys = {row[0] for row in existing_rows}
+
+    missing = [m for m in AVAILABLE_MODULES if m["key"] not in existing_keys]
+    if missing:
+        is_new_tenant = len(existing_rows) == 0
+        for m in missing:
             db.add(
                 TenantModule(
                     tenant_id=tenant_id,
@@ -52,7 +62,11 @@ async def _ensure_initialized(db: AsyncSession, tenant_id: UUID) -> None:
                     name=m["name"],
                     description=m["description"],
                     category=m["category"],
-                    is_enabled=(m["key"] == "quoter"),
+                    # Tenant nuevo: cotizador encendido. Módulo nuevo en
+                    # tenant existente: apagado (el dueño lo enciende).
+                    is_enabled=(
+                        (m["key"] == "quoter") if is_new_tenant else False
+                    ),
                     is_custom=False,
                 )
             )

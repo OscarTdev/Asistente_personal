@@ -6,7 +6,7 @@ historial de chat de cada tenant.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -26,6 +26,7 @@ from app.core.modules_registry import (
     module_dev_status,
     plan_allows,
 )
+from app.core.security import create_access_token
 from app.models import (
     ChannelIdentity,
     Contact,
@@ -55,11 +56,14 @@ from app.schemas.admin import (
     PlanChangeRequest,
     PlanPriceOut,
     PlanPriceUpdate,
+    PlatformAdminStats,
     TenantAdminDetail,
     TenantAdminSummary,
+    TenantStatusUpdate,
     TenantUpdateRequest,
     TenantWhatsappUpdate,
 )
+from app.schemas.auth import UserPublic
 from app.schemas.contacts import (
     ContactDetail,
     ContactMessage,
@@ -68,6 +72,7 @@ from app.schemas.contacts import (
 )
 from app.services import contacts as contacts_service
 from app.services import plan_prices
+from app.services import platform_admin as platform_admin_service
 from app.services.entitlements import (
     apply_plan,
     module_allowed,
@@ -111,10 +116,16 @@ async def _latest_subscription(
     ).scalar_one_or_none()
 
 
-async def _count_by_tenant(db: AsyncSession, model) -> dict[UUID, int]:
+async def _count_by_tenant(
+    db: AsyncSession, model, tenant_ids: set[UUID]
+) -> dict[UUID, int]:
+    if not tenant_ids:
+        return {}
     rows = (
         await db.execute(
-            select(model.tenant_id, func.count()).group_by(model.tenant_id)
+            select(model.tenant_id, func.count())
+            .where(model.tenant_id.in_(tenant_ids))
+            .group_by(model.tenant_id)
         )
     ).all()
     return {tenant_id: count for tenant_id, count in rows}
@@ -176,10 +187,18 @@ async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
     ).scalars().all()
 
     counts = {
-        "contacts": (await _count_by_tenant(db, Contact)).get(tenant.id, 0),
-        "quotes": (await _count_by_tenant(db, Quote)).get(tenant.id, 0),
-        "messages": (await _count_by_tenant(db, Message)).get(tenant.id, 0),
-        "users": (await _count_by_tenant(db, User)).get(tenant.id, 0),
+        "contacts": (await _count_by_tenant(db, Contact, {tenant.id})).get(
+            tenant.id, 0
+        ),
+        "quotes": (await _count_by_tenant(db, Quote, {tenant.id})).get(
+            tenant.id, 0
+        ),
+        "messages": (await _count_by_tenant(db, Message, {tenant.id})).get(
+            tenant.id, 0
+        ),
+        "users": (await _count_by_tenant(db, User, {tenant.id})).get(
+            tenant.id, 0
+        ),
     }
     enabled_modules = (
         await db.execute(
@@ -275,22 +294,46 @@ async def _tenant_detail(db: AsyncSession, tenant: Tenant) -> TenantAdminDetail:
 
 @router.get("/tenants", response_model=list[TenantAdminSummary])
 async def list_tenants(
+    q: str | None = Query(default=None, min_length=1, max_length=120),
+    plan: str | None = Query(default=None, max_length=30),
+    is_active: bool | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
     current_user: User = Depends(require_platform_admin),
     db: AsyncSession = Depends(get_db),
 ) -> list[TenantAdminSummary]:
-    """Lista los clientes de la plataforma con su plan y uso."""
-    tenants = (
-        await db.execute(select(Tenant).order_by(Tenant.name))
-    ).scalars().all()
+    """Lista clientes registrados con filtros y paginación estable."""
+    filters = [Tenant.is_platform.is_(False)]
+    if q:
+        pattern = f"%{q.strip()}%"
+        filters.append((Tenant.name.ilike(pattern)) | (Tenant.slug.ilike(pattern)))
+    if plan:
+        filters.append(Tenant.plan == plan)
+    if is_active is not None:
+        filters.append(Tenant.is_active.is_(is_active))
 
-    contacts = await _count_by_tenant(db, Contact)
-    quotes = await _count_by_tenant(db, Quote)
-    messages = await _count_by_tenant(db, Message)
-    users = await _count_by_tenant(db, User)
+    tenants = (
+        await db.execute(
+            select(Tenant)
+            .where(*filters)
+            .order_by(Tenant.name, Tenant.id)
+            .offset(offset)
+            .limit(limit)
+        )
+    ).scalars().all()
+    tenant_ids = {tenant.id for tenant in tenants}
+
+    contacts = await _count_by_tenant(db, Contact, tenant_ids)
+    quotes = await _count_by_tenant(db, Quote, tenant_ids)
+    messages = await _count_by_tenant(db, Message, tenant_ids)
+    users = await _count_by_tenant(db, User, tenant_ids)
     enabled_rows = (
         await db.execute(
             select(TenantModule.tenant_id, func.count())
-            .where(TenantModule.is_enabled)
+            .where(
+                TenantModule.is_enabled,
+                TenantModule.tenant_id.in_(tenant_ids),
+            )
             .group_by(TenantModule.tenant_id)
         )
     ).all()
@@ -300,7 +343,9 @@ async def list_tenants(
     subs: dict[UUID, Subscription] = {}
     all_subs = (
         await db.execute(
-            select(Subscription).order_by(Subscription.created_at.desc())
+            select(Subscription)
+            .where(Subscription.tenant_id.in_(tenant_ids))
+            .order_by(Subscription.created_at.desc())
         )
     ).scalars().all()
     for sub in all_subs:
@@ -325,6 +370,14 @@ async def list_tenants(
     return result
 
 
+@router.get("/stats", response_model=PlatformAdminStats)
+async def platform_stats(
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> PlatformAdminStats:
+    return await platform_admin_service.compute_platform_stats(db)
+
+
 @router.get("/tenants/{tenant_id}", response_model=TenantAdminDetail)
 async def get_tenant(
     tenant_id: UUID,
@@ -333,6 +386,35 @@ async def get_tenant(
 ):
     """Detalle de un cliente: servicios, métodos de pago y suscripción."""
     tenant = await _get_tenant_or_404(db, tenant_id)
+    return await _tenant_detail(db, tenant)
+
+
+@router.patch("/tenants/{tenant_id}/status", response_model=TenantAdminDetail)
+async def update_tenant_status(
+    tenant_id: UUID,
+    body: TenantStatusUpdate,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> TenantAdminDetail:
+    """Bloquea o desbloquea un cliente registrado, conservando sus datos."""
+    try:
+        tenant = await platform_admin_service.set_tenant_status(
+            db, tenant_id=tenant_id, is_active=body.is_active
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    from app.services.audit import log_action
+
+    await log_action(
+        db,
+        actor_user_id=current_user.id,
+        action="unblock_tenant" if body.is_active else "block_tenant",
+        tenant_id=tenant.id,
+        object_ref="tenant_status",
+    )
+    await db.commit()
     return await _tenant_detail(db, tenant)
 
 
@@ -1403,3 +1485,75 @@ async def list_conversation_messages(
         ],
         total=total,
     )
+
+
+# ── Impersonación y Acceso a Clientes ───────────────────────────────────────
+
+
+@router.post("/tenants/{tenant_id}/impersonate")
+async def impersonate_tenant(
+    tenant_id: UUID,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permite al Super Admin ver y operar el panel como si fuera el dueño del tenant.
+
+    Genera un access token con tenant_id del cliente, marcado como 'impersonated'.
+    """
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    # Generamos un token que apunta al tenant del cliente
+    token = create_access_token(
+        user_id=current_user.id,
+        tenant_id=tenant.id,
+        role="admin",
+        extra_claims={
+            "impersonated": True,
+            "original_tenant_id": str(current_user.tenant_id),
+        },
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": UserPublic(
+            id=current_user.id,
+            email=current_user.email,
+            full_name=current_user.full_name,
+            role="admin",
+            tenant_id=tenant.id,
+            bot_name=tenant.bot_name,
+            tenant_name=tenant.name,
+            plan=tenant.plan,
+            is_platform_admin=True,
+            is_impersonating=True,
+        ),
+    }
+
+
+@router.post("/tenants/{tenant_id}/invite-link")
+async def generate_invite_link(
+    tenant_id: UUID,
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Genera enlace de un solo uso para que el dueño configure su clave."""
+    tenant = await _get_tenant_or_404(db, tenant_id)
+
+    token = create_access_token(
+        user_id=uuid4(),
+        tenant_id=tenant.id,
+        role="onboarding",
+        expires_delta=timedelta(hours=48),
+    )
+
+    settings = get_settings()
+    invite_url = f"{settings.panel_base_url}/crear-contrasena?token={token}"
+
+    return {
+        "tenant_id": str(tenant.id),
+        "tenant_name": tenant.name,
+        "invite_url": invite_url,
+        "token": token,
+        "expires_in_hours": 48,
+    }

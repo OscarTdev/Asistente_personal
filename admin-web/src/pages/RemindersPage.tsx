@@ -2,12 +2,13 @@
 // El bot escribe al dueño por WhatsApp cuando llega la hora.
 
 import { useState } from 'react'
+import { Reminder } from '@/types'
 import { Link } from 'react-router-dom'
-import Card from '../components/ui/card'
-import Button from '../components/ui/button'
-import Input from '../components/ui/input'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconArrowLeft } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Button } from "../components/ui/button"
+import { Input } from "../components/ui/input"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconArrowLeft } from "@/components/ui/icons"
 import {
   useCreateReminder,
   useReminders,
@@ -76,7 +77,8 @@ export default function RemindersPage() {
         <h1 className="text-2xl font-semibold tracking-tight text-ink">Agenda</h1>
         <p className="mt-1 text-sm text-linen-600">
           Recordatorios que el bot enviará por WhatsApp a su hora. También los
-          puedes crear por chat: «recuérdame llamar al cliente el jueves».
+          puedes crear por chat: «recuérdame llamar al cliente el jueves». Si
+          conectas Google, también aparecerán en Calendar.
         </p>
       </div>
 
@@ -100,7 +102,7 @@ export default function RemindersPage() {
             <Input
               id="remind-content"
               value={content}
-              onChangeValue={setContent}
+              onChange={(e) => setContent(e.target.value)}
               placeholder="Llamar al cliente de Laureles"
               aria-label="Qué recordar"
             />
@@ -113,7 +115,7 @@ export default function RemindersPage() {
               id="remind-when"
               type="datetime-local"
               value={when}
-              onChangeValue={setWhen}
+              onChange={(e) => setWhen(e.target.value)}
               aria-label="Fecha y hora del recordatorio"
             />
           </div>
@@ -146,7 +148,7 @@ export default function RemindersPage() {
           </p>
         ) : (
           <div className="divide-y divide-linen-100">
-            {pending.data?.map((reminder) => {
+            {pending.data?.map((reminder: Reminder) => {
               const overdue = new Date(reminder.remind_at) < now
               return (
                 <div key={reminder.id} className="flex flex-wrap items-center gap-3 py-3">
@@ -163,6 +165,13 @@ export default function RemindersPage() {
                   <time className="tabular text-xs text-linen-600">
                     {formatWhen(reminder.remind_at)}
                   </time>
+                  <span className="text-xs text-linen-600">
+                    {reminder.google_sync_status === 'synced'
+                      ? 'Google Calendar'
+                      : reminder.google_sync_status === 'auth_error'
+                        ? 'Reconectar Google'
+                        : 'WhatsApp'}
+                  </span>
                   <div className="flex gap-2">
                     <Button
                       type="button"
@@ -198,7 +207,7 @@ export default function RemindersPage() {
           </p>
         ) : (
           <div className="divide-y divide-linen-100">
-            {historyItems.slice(0, 20).map((reminder) => {
+            {historyItems.slice(0, 20).map((reminder: Reminder) => {
               const badge = STATUS_BADGES[reminder.status] ?? {
                 label: reminder.status,
                 className: 'bg-linen-100 text-linen-600',

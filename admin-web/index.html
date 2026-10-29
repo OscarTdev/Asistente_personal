@@ -5,6 +5,20 @@
     <link rel="icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Asistente Personal</title>
+    <script>
+      // Aplica el tema ANTES del primer render (evita el flash de tema
+      // claro en usuarios con modo oscuro guardado o preferencia del SO).
+      (function () {
+        try {
+          var theme = localStorage.getItem('asistente_theme') || 'system';
+          var dark =
+            theme === 'dark' ||
+            (theme === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) { /* noop */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

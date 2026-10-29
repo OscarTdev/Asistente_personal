@@ -1,0 +1,43 @@
+{
+  "manifest_version": "0.3",
+  "name": "asistente-personal",
+  "display_name": "Asistente Personal (proyecto)",
+  "version": "0.2.0",
+  "description": "Consulta read-only de la base de datos, herramientas de desarrollo (tests, lint, docs, migraciones) y edición de archivos en carpetas permitidas (backend/app, backend/tests, admin-web/src, docs).",
+  "author": {
+    "name": "Oscar Baena"
+  },
+  "server": {
+    "type": "python",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "${user_config.python_path}",
+      "args": ["${__dirname}/server.py"],
+      "env": {
+        "ASISTENTE_PROJECT_ROOT": "${user_config.project_root}"
+      }
+    }
+  },
+  "user_config": {
+    "project_root": {
+      "type": "directory",
+      "title": "Carpeta del proyecto",
+      "description": "Ruta al repositorio Asistente_personal (contiene backend/ y docs/)",
+      "required": true,
+      "default": "C:\\Users\\juand\\OneDrive\\Desktop\\Asistente_personal"
+    },
+    "python_path": {
+      "type": "string",
+      "title": "Python del venv del backend",
+      "description": "Interprete con psycopg, mcp y python-dotenv instalados",
+      "required": true,
+      "default": "C:\\Users\\juand\\OneDrive\\Desktop\\Asistente_personal\\backend\\.venv\\Scripts\\python.exe"
+    }
+  },
+  "compatibility": {
+    "platforms": ["win32"],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  }
+}

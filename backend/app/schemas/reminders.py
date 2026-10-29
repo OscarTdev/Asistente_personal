@@ -18,6 +18,8 @@ class ReminderOut(BaseModel):
     status: str
     sent_at: datetime | None
     created_at: datetime
+    google_event_id: str | None = None
+    google_sync_status: str = "local"
 
 
 class ReminderCreate(BaseModel):

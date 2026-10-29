@@ -29,8 +29,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_role
+from app.api.deps import get_current_user, get_optional_user, require_role
 from app.core.database import get_db
+from app.core.security import create_access_token
 from app.models import Tenant, User
 from app.schemas.google import (
     CalendarEventItem,
@@ -42,6 +43,7 @@ from app.schemas.google import (
     GoogleDriveFile,
     GoogleEventCreatePayload,
     GoogleExportResult,
+    GoogleLoginAuthorizeRequest,
     GoogleStatus,
     GoogleSurveyResult,
 )
@@ -127,29 +129,69 @@ async def google_authorize(
     )
 
 
+@router.post("/login/authorize", response_model=GoogleAuthorizeResult)
+async def google_login_authorize(
+    body: GoogleLoginAuthorizeRequest,
+) -> GoogleAuthorizeResult:
+    """Genera OAuth para iniciar sesión, sin crear una sesión previa."""
+    if not google_oauth.google_configured():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Google aún no está configurado en la plataforma.",
+        )
+    state = google_oauth.build_login_state(body.email.strip().lower())
+    return GoogleAuthorizeResult(
+        authorization_url=google_oauth.build_authorization_url(state)
+    )
+
+
 @router.post("/callback", response_model=GoogleCallbackResult)
 async def google_callback(
     body: GoogleCallbackPayload,
-    current_user: User = Depends(_require_admin),
+    current_user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ) -> GoogleCallbackResult:
-    """Google volvió con el code: verificar state, canjear y guardar."""
+    """Google volvió con el code: verificar state, canjear y guardar.
+
+    El callback también acepta el flujo iniciado desde WhatsApp, donde el
+    navegador todavía no tiene una sesión del panel. El state firmado es la
+    prueba de pertenencia al tenant y expira en diez minutos.
+    """
     # El state ata el consentimiento al tenant que lo inició: nadie puede
     # conectar la cuenta de otro negocio (ni cross-tenant ni CSRF).
     try:
-        state_tenant = google_oauth.verify_state_token(body.state)
+        state_payload = google_oauth.verify_state_payload(body.state)
     except google_oauth.GoogleAuthError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
         ) from exc
-    if state_tenant != current_user.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Este enlace de conexión pertenece a otra cuenta.",
-        )
+    purpose = state_payload.get("purpose", "connect")
+    if purpose == "login":
+        if current_user is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya tienes una sesión iniciada.",
+            )
+        try:
+            expected_email = google_oauth.verify_login_state(body.state)
+        except google_oauth.GoogleAuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+    else:
+        try:
+            state_tenant = google_oauth.verify_state_token(body.state)
+        except google_oauth.GoogleAuthError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        if current_user is not None and state_tenant != current_user.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Este enlace de conexión pertenece a otra cuenta.",
+            )
+        if current_user is not None and current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo el administrador puede conectar Google.",
+            )
 
-    # Google puede rechazar el code (expira ~10 min, ya usado, redirect
-    # mismatch): 409 accionable, nunca un 500 sin explicación.
     try:
         tokens = await google_oauth.exchange_code(body.code)
         google_email = await google_oauth.fetch_user_email(tokens["access_token"])
@@ -161,6 +203,47 @@ async def google_callback(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
+
+    if purpose == "login":
+        if google_email != expected_email:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="El correo de Google debe coincidir con el correo del panel.",
+            )
+        user = (
+            await db.execute(select(User).where(User.email == google_email))
+        ).scalars().first()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No existe una cuenta con ese correo. Regístrate primero desde WhatsApp.",
+            )
+        if not user.is_active:
+            user.is_active = True
+        user.google_subject = user.google_subject or google_email
+        await db.commit()
+        tenant = await _current_tenant(db, user)
+        access_token = create_access_token(
+            user_id=user.id, tenant_id=user.tenant_id, role=user.role
+        )
+        return GoogleCallbackResult(
+            connected=False,
+            google_email=google_email,
+            authenticated=True,
+            access_token=access_token,
+            user={
+                "id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role,
+                "tenant_id": str(user.tenant_id),
+                "bot_name": tenant.bot_name,
+                "tenant_name": tenant.name,
+                "plan": tenant.plan,
+                "is_platform_admin": user.is_platform_admin,
+            },
+        )
+
     if not google_email:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -168,7 +251,7 @@ async def google_callback(
         )
     await google_oauth.upsert_connection(
         db,
-        tenant_id=current_user.tenant_id,
+        tenant_id=state_tenant,
         google_email=google_email,
         access_token=tokens["access_token"],
         refresh_token=tokens["refresh_token"],
@@ -176,7 +259,7 @@ async def google_callback(
         scope=tokens["scope"],
     )
     # Minimización Habeas Data: el correo del dueño no va al log
-    logger.info("Tenant %s conectó su cuenta Google", current_user.tenant_id)
+    logger.info("Tenant %s conectó su cuenta Google", state_tenant)
     return GoogleCallbackResult(connected=True, google_email=google_email)
 
 

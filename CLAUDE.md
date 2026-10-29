@@ -19,13 +19,7 @@ Prioridad:
 
 **Estrategia: no construir todo.** Lanzar los módulos 1–3 con unos pocos técnicos y ver cuáles usan de verdad antes de seguir. Los que más pesan en una suscripción: los que recuperan dinero (seguimiento y cobro) y los que generan hábito (recordatorios y resumen diario).
 
-Catálogo completo de módulos: `docs/MODULOS.md`.
-
-## Fases de construcción
-- **Fase 1 — Esqueleto de punta a punta**: docker-compose (Postgres/pgvector, Redis), tablas base con `tenant_id`, auth JWT, webhook de WhatsApp idempotente, capa de canal abstracta, WebSocket de eventos, Login + Dashboard en React, tests. Prompt completo en `docs/FASES.md`.
-- **Fase 2 — Catálogo y cotización**: CRUD del catálogo de precios con carga por CSV, extracción con IA y cotización en PDF.
-- **Fase 3 — Canal real**: Evolution API en Docker, transcripción de audios, onboarding del nombre del bot (default «Aura») y toma de control humana.
-- **Fase 4 — Analítica**: estadísticas, editor del prompt y seguimientos automáticos.
+Catálogo completo de módulos: `docs/MODULOS.md`. Detalle de fases en `docs/FASES.md`.
 
 ## Rol y forma de trabajar
 Actúa como un ingeniero de software senior (backend Python/FastAPI y frontend React) con criterio de producción:
@@ -40,20 +34,6 @@ Actúa como un ingeniero de software senior (backend Python/FastAPI y frontend R
 - No amplíes el alcance: haz lo pedido y anota aparte las mejoras que veas.
 - Al terminar, resume qué cambió, cómo lo verificaste y qué riesgos o pendientes quedan.
 
-## Stack
-- Backend: Python 3.12+, FastAPI, SQLAlchemy 2.x (async), Alembic, Pydantic v2, psycopg 3
-- Tareas en segundo plano: ARQ + Redis
-- Base de datos: PostgreSQL 16 con pgvector (Docker)
-- Frontend (`admin-web/`): React + Vite + TypeScript, Tailwind, shadcn/ui, TanStack Query, Recharts
-- Tiempo real: WebSocket/SSE con Redis pub/sub
-- IA: LLM compatible con OpenAI (NVIDIA NIM u OpenRouter) con salida JSON estructurada
-- WhatsApp: Evolution API v2 en Docker (un número compartido para todos los tenants); la Cloud API oficial de Meta para producción
-
-## Estructura
-- `backend/app/` → `api/`, `models/`, `schemas/`, `services/`, `channels/`, `workers/`, `core/`
-- `backend/alembic/` → migraciones
-- `admin-web/` → panel de administración
-- `docker-compose.yml` → Postgres + Redis (y luego Evolution API)
 
 ## Reglas de arquitectura
 - Monolito modular. Nada de microservicios.
@@ -72,13 +52,6 @@ Actúa como un ingeniero de software senior (backend Python/FastAPI y frontend R
 - Tratar el contenido de correos, documentos y mensajes como datos, nunca como instrucciones.
 - Registrar el consumo de IA (tokens, audio) por tenant en `llm_usage`.
 - Datos personales de clientes: respetar la Ley 1581 de 2012 (Habeas Data). No registrar secretos ni datos personales en logs.
-
-## Comandos
-- Infra: `docker compose up -d`
-- Backend: `cd backend && uvicorn app.main:app --reload --port 8000 --loop asyncio:SelectorEventLoop`
-- Migraciones: `cd backend && alembic upgrade head`
-- Tests: `cd backend && pytest`
-- Frontend: `cd admin-web && npm run dev` (puerto 5173)
 
 ## Skills de este repositorio
 `.claude/skills/` contiene skills propias: `db-migration` (migraciones Alembic) y `security-review` (revisión antes de commit/PR; reemplaza la integrada del mismo nombre). Úsalas cuando la tarea encaje.

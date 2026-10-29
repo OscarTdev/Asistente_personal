@@ -11,12 +11,22 @@ import pytest
 from server import (
     DEFAULT_ROW_LIMIT,
     MAX_ROWS_HARD_CAP,
+    ROOT,
+    DOCS_DIR,
     list_migrations,
     redact_cell,
     redact_row,
     sanitize_dsn,
     search_docs,
     validate_select,
+    _resolve_inside,
+    _allowed_roots,
+    _safe_read_text,
+    list_files,
+    read_file,
+    search_code,
+    write_file,
+    replace_in_file,
 )
 
 
@@ -147,3 +157,71 @@ class TestRepoHelpers:
             assert "ERROR" not in search_docs("WhatsApp")
         finally:
             os.chdir(prev)
+
+
+class TestFilesystemSandbox:
+    def test_allowed_roots_exist(self):
+        roots = _allowed_roots()
+        assert len(roots) == 4
+        for r in roots:
+            assert r.exists(), f"Raíz no existe: {r}"
+
+    def test_resolve_inside_allowed(self):
+        # Ruta absoluta dentro de backend/app
+        p = _resolve_inside(str(ROOT / "backend" / "app" / "services"))
+        assert p == (ROOT / "backend" / "app" / "services").resolve()
+
+    def test_resolve_inside_rejected_outside(self):
+        import pytest
+        # .env en la raíz (fuera de zonas permitidas)
+        with pytest.raises(ValueError):
+            _resolve_inside(str(ROOT / ".env"))
+        # backend/alembic (no permitido)
+        with pytest.raises(ValueError):
+            _resolve_inside(str(ROOT / "backend" / "alembic"))
+        # root del proyecto
+        with pytest.raises(ValueError):
+            _resolve_inside(str(ROOT))
+
+    def test_resolve_traversal_rejected(self):
+        import pytest
+        # Traversal desde zona permitida
+        with pytest.raises(ValueError):
+            _resolve_inside(str(ROOT / "backend" / "app" / ".." / ".." / ".env"))
+
+    def test_read_write_roundtrip_docs_temp(self):
+        """Usa docs/ (raíz permitida) para test roundtrip sin monkeypatch."""
+        import server as srv
+        test_file = DOCS_DIR / "_mcp_test_temp.txt"
+        try:
+            # write_file
+            res = srv.write_file(str(test_file), "hola mundo")
+            assert "OK" in res
+            # read_file
+            out = srv.read_file(str(test_file))
+            assert "hola mundo" in out
+            # replace_in_file
+            res = srv.replace_in_file(str(test_file), "hola", "adiós")
+            assert "OK" in res
+            out = srv.read_file(str(test_file))
+            assert "adiós mundo" in out
+            # replace_in_file falla si no hay coincidencia
+            res = srv.replace_in_file(str(test_file), "noexiste", "x")
+            assert "ERROR" in res
+            # replace_in_file falla si hay múltiples
+            test_file.write_text("uno uno")
+            res = srv.replace_in_file(str(test_file), "uno", "dos")
+            assert "ERROR" in res
+            # search_code
+            test_file.write_text("def foo():\n    pass\n")
+            res = srv.search_code(r"def foo", path="docs", glob="*.txt")
+            assert "_mcp_test_temp.txt" in res
+        finally:
+            if test_file.exists():
+                test_file.unlink()
+
+    def test_list_files_docs(self):
+        import server as srv
+        # docs/ existe y tiene archivos
+        out = srv.list_files("docs")
+        assert "docs" in out.lower() or ".md" in out

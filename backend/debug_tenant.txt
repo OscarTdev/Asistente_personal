@@ -1,0 +1,29 @@
+dump keys: ['id', 'name', 'slug', 'bot_name', 'is_active', 'plan', 'plan_label', 'plan_price_cop', 'wa_id', 'account_type', 'nit', 'customer_mode', 'subscription_status', 'subscription_period_end', 'enabled_modules', 'total_modules', 'contacts', 'quotes', 'messages', 'users', 'modules', 'payment_methods', 'subscription', 'last_message_at', 'last_quote_at', 'total_quotes_amount', 'quotes_last_30d', 'active_services']
+last_message_at: None
+last_quote_at: None
+total_quotes_amount: 0.0
+quotes_last_30d: 0
+active_services: ['crm', 'voice_notes', 'reminders', 'daily_summary', 'email_calendar', 'personal_finance', 'collections', 'quoter', 'warranties', 'visit_report', 'maintenance', 'inventory', 'profitability', 'follow_up', 'site_log']
+
+--- RAW SQL (hardcoded) ---
+last_msg: None
+last_quote: None
+total_quotes: 0
+quotes_last_30d: 0
+
+--- RAW SQL (tenant.id) ---
+last_msg: None
+last_quote: None
+total_quotes: 0
+quotes_last_30d: 0
+
+--- ORM ---
+last_msg: None
+last_quote: None
+total_quotes: 0
+quotes_last_30d: 0
+
+--- tenant.id ---
+id: 0d247b01-e2d6-43fc-b82e-d67159e09526
+type: <class 'uuid.UUID'>
+str: 0d247b01-e2d6-43fc-b82e-d67159e09526

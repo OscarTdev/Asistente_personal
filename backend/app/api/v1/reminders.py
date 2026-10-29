@@ -47,6 +47,7 @@ async def create_reminder(
         content=body.content,
         remind_at=body.remind_at,
     )
+    await notes_service.sync_reminder_to_google(db, reminder)
     return ReminderOut.model_validate(reminder)
 
 

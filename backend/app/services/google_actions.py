@@ -24,6 +24,12 @@ from app.services.expenses import monthly_summary
 from app.services.formatting import format_cop
 from app.services.time_window import month_bounds, to_colombia
 
+
+async def _build_people_service(creds):
+    """Construye el cliente de People API usando googleapiclient (para sync_contacts)."""
+    from googleapiclient.discovery import build
+    return build("people", "v1", credentials=creds, cache_discovery=False)
+
 logger = logging.getLogger(__name__)
 
 _MESES = (
@@ -112,6 +118,67 @@ async def create_event(
         end_iso=end_at.isoformat(),
         description=description,
     )
+
+
+async def update_event(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    event_id: str,
+    summary: str,
+    start_at: datetime,
+    duration_minutes: int = 60,
+    description: str | None = None,
+) -> dict:
+    token = await google_oauth.get_access_token(db, tenant_id=tenant_id)
+    end_at = start_at + timedelta(minutes=duration_minutes)
+    return await google_api.calendar_update_event(
+        token,
+        event_id=event_id,
+        summary=summary,
+        start_iso=start_at.isoformat(),
+        end_iso=end_at.isoformat(),
+        description=description,
+    )
+
+
+async def delete_event(
+    db: AsyncSession, *, tenant_id: UUID, event_id: str
+) -> None:
+    token = await google_oauth.get_access_token(db, tenant_id=tenant_id)
+    await google_api.calendar_delete_event(token, event_id=event_id)
+
+
+async def create_note(
+    db: AsyncSession,
+    *,
+    tenant_id: UUID,
+    content: str,
+) -> dict:
+    """Crea nota externa: Keep si el scope fue concedido, Docs como fallback."""
+    token = await google_oauth.get_access_token(db, tenant_id=tenant_id)
+    connection = await google_oauth.get_connection(db, tenant_id=tenant_id)
+    scopes = set(connection.scopes or []) if connection else set()
+    if "https://www.googleapis.com/auth/keep" in scopes:
+        result = await google_api.keep_create_note(
+            token, title="Nota de Aura", text=content
+        )
+        note_id = result.get("name", "").split("/")[-1]
+        return {
+            "provider": "keep",
+            "external_id": note_id,
+            "url": f"https://keep.google.com/u/0/#NOTE/{note_id}",
+        }
+
+    doc = await google_api.docs_create_document(token, title="Nota de Aura")
+    await google_api.docs_insert_text(
+        token, document_id=doc["document_id"], text=content
+    )
+    return {
+        "provider": "docs",
+        "external_id": doc["document_id"],
+        "url": doc["url"],
+    }
 
 
 async def export_expenses_sheet(

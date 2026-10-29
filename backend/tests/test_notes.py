@@ -245,4 +245,47 @@ async def test_due_reminders_query(
 
     due = await notes_service.due_reminders(db_session)
     assert len(due) == 1
-    assert "Ya es la hora" in due[0].content
+    # due_reminders retorna tuplas (reminder, notif_type): el principal
+    # vencido llega como ("Ya es la hora", "main").
+    assert due[0][1] == "main"
+    assert "Ya es la hora" in due[0][0].content
+
+
+async def test_due_reminders_pre_notifications(
+    db_session: AsyncSession, tenant: Tenant
+):
+    """Pre-notificaciones: un recordatorio a 2h aparece como '2h' y
+    uno a 30min como '30m'; uno a 3 horas no aparece todavía."""
+    now = datetime.now(UTC)
+    await notes_service.save_reminder(
+        db_session, tenant_id=tenant.id,
+        content="En dos horas exactas",
+        remind_at=now + timedelta(hours=2),
+    )
+    await notes_service.save_reminder(
+        db_session, tenant_id=tenant.id,
+        content="En media hora exacta",
+        remind_at=now + timedelta(minutes=30),
+    )
+    await notes_service.save_reminder(
+        db_session, tenant_id=tenant.id,
+        content="En tres horas",
+        remind_at=now + timedelta(hours=3),
+    )
+
+    due = await notes_service.due_reminders(db_session)
+    types = {r.content: t for r, t in due}
+    assert types.get("En dos horas exactas") == "2h"
+    assert types.get("En media hora exacta") == "30m"
+    assert "En tres horas" not in types
+
+    # Tras marcar la pre-notificación 2h como enviada, no vuelve a salir
+    two_hours_reminder = next(r for r, _ in due if _ == "2h")
+    await notes_service.mark_reminder_sent(
+        db_session, two_hours_reminder, notification_type="2h"
+    )
+    due_again = await notes_service.due_reminders(db_session)
+    assert all(
+        not (r.content == "En dos horas exactas" and t == "2h")
+        for r, t in due_again
+    )

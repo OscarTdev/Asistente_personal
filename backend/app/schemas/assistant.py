@@ -14,7 +14,9 @@ class AssistantIntent(BaseModel):
         "warranty", "expense", "inventory", "site_log",
         "profitability", "google_email", "google_calendar",
         "google_sheets", "google_docs", "conversation_log",
-        "web_search", "add_contact", "help", "chat",
+        "web_search", "add_contact", "edit_contact", "delete_contact",
+        "list_contacts", "view_contact", "help", "chat",
+        "panel_access", "google_connect",
     ] = "chat"
     contact_name: str | None = Field(default=None, max_length=100)
     # Para add_contact: número de WhatsApp (formato flexible)

@@ -3,8 +3,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
 import { useGoogleCallback } from '../hooks/useGoogle'
 
 export default function GoogleCallbackPage() {
@@ -41,9 +41,18 @@ export default function GoogleCallbackPage() {
   }, [])
 
   const connectedEmail = callback.data?.google_email
+  const authenticated = callback.data?.authenticated
 
   useEffect(() => {
-    if (!connectedEmail) return
+    const result = callback.data
+    if (!result?.authenticated || !result.access_token || !result.user) return
+    localStorage.setItem('asistente_token', result.access_token)
+    localStorage.setItem('asistente_user', JSON.stringify(result.user))
+    navigate('/', { replace: true })
+  }, [callback.data, navigate])
+
+  useEffect(() => {
+    if (!connectedEmail || authenticated) return
     const timer = setTimeout(() => navigate('/negocio', { replace: true }), 1800)
     return () => clearTimeout(timer)
   }, [connectedEmail, navigate])

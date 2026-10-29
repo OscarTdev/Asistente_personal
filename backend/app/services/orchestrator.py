@@ -15,6 +15,7 @@ nota amable si el canal está disponible.
 
 import base64
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -61,6 +62,87 @@ from app.services.invoice_pdf import generate_invoice_pdf
 from app.services.usage import log_service_usage
 
 logger = logging.getLogger(__name__)
+
+_PANEL_NAME_RE = re.compile(
+    r"\b(admin|administrador|panel|plataforma)\b", re.IGNORECASE
+)
+_PANEL_ACTION_RE = re.compile(
+    r"\b(entrar|acceder|acceso|ingresar|link|enlace|pásame|pasame|dame|"
+    r"cómo entro|como entro)\b",
+    re.IGNORECASE,
+)
+_GOOGLE_CONNECT_RE = re.compile(
+    r"\b(conectar|conecta|vincular|vincula|autorizar|autoriza|integrar|"
+    r"integra)\b.{0,30}\b(google|gmail|calendar|calendario)\b"
+    r"|\b(google|gmail|calendar|calendario)\b.{0,30}\b(conectar|vincular|"
+    r"autorizar|integrar)\b",
+    re.IGNORECASE,
+)
+
+
+def _requests_panel_access(text: str) -> bool:
+    normalized = text.strip()
+    return bool(
+        _PANEL_NAME_RE.search(normalized) and _PANEL_ACTION_RE.search(normalized)
+    )
+
+
+def _requests_google_connection(text: str) -> bool:
+    return bool(_GOOGLE_CONNECT_RE.search(text.strip()))
+
+
+async def _handle_panel_access(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+) -> None:
+    from app.services.onboarding import panel_access_message
+
+    await _send_out_message(
+        db,
+        tenant_id=tenant.id,
+        conversation=conversation,
+        channel=channel,
+        wa_id=wa_id,
+        text=await panel_access_message(db, tenant=tenant),
+    )
+
+
+async def _handle_google_connection(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+) -> None:
+    from app.services import google_oauth
+
+    if not google_oauth.google_configured():
+        text = (
+            "Google todavía no está habilitado en la plataforma. "
+            "Avísame cuando el administrador termine la configuración."
+        )
+    else:
+        state = google_oauth.build_state_token(tenant.id)
+        url = google_oauth.build_authorization_url(state)
+        text = (
+            f"🔗 Autoriza Google para {tenant.bot_name or 'Aura'} desde aquí:\n"
+            f"{url}\n\n"
+            "El enlace vence en 10 minutos. En la ventana de Google elige "
+            "tu cuenta y acepta los permisos; luego volverás al panel."
+        )
+    await _send_out_message(
+        db,
+        tenant_id=tenant.id,
+        conversation=conversation,
+        channel=channel,
+        wa_id=wa_id,
+        text=text,
+    )
 
 
 async def _load_logo_bytes(db: AsyncSession, tenant_id: UUID) -> bytes | None:
@@ -1336,7 +1418,19 @@ async def _handle_note(
         note = await notes_service.save_note(
             db, tenant_id=tenant.id, content=content
         )
-        await tell_owner(f"📝 Anotado: «{note.content}»")
+        await notes_service.sync_note_to_google(db, note)
+        if note.google_sync_status == "synced":
+            await tell_owner(
+                f"📝 Anotado y guardado en Google {note.google_provider}: "
+                f"«{note.content}»\n{note.google_url}"
+            )
+        elif note.google_sync_status == "auth_error":
+            await tell_owner(
+                f"📝 Anotado localmente: «{note.content}»\n"
+                "Tu conexión de Google necesita reconectarse desde el panel."
+            )
+        else:
+            await tell_owner(f"📝 Anotado localmente: «{note.content}»")
 
     elif action == "list":
         items = await notes_service.list_notes(db, tenant_id=tenant.id)
@@ -1483,9 +1577,77 @@ async def _handle_reminder(
             await list_reminders()
             await tell_owner("¿Cuál de estos cancelo?")
             return
-        elegido.status = "cancelled"
-        await db.commit()
+        await notes_service.set_reminder_status(
+            db,
+            tenant_id=tenant.id,
+            reminder_id=elegido.id,
+            status="cancelled",
+        )
         await tell_owner(f"🗑️ Cancelado: «{elegido.content[:60]}».")
+        return
+
+    # Completar: «ya quedó», «listo», «hecho» sobre un recordatorio.
+    complete_match = re.search(
+        r"\b(listo|hecho|terminad\w*|complet\w*|ya qued[oó])\b", text_lower
+    )
+    if complete_match and ("recordatorio" in text_lower or not intent.remind_at):
+        pendings = await pending_reminders()
+        objetivo = (intent.message_text or intent.description or "").strip().lower()
+        elegido = None
+        if objetivo:
+            elegido = next(
+                (r for r in pendings if objetivo[:12] in r.content.lower()), None
+            )
+        elif len(pendings) == 1:
+            elegido = pendings[0]
+        if elegido is None:
+            await list_reminders()
+            await tell_owner("¿Cuál de estos recordatorios ya quedó listo?")
+            return
+        await notes_service.set_reminder_status(
+            db,
+            tenant_id=tenant.id,
+            reminder_id=elegido.id,
+            status="done",
+        )
+        await tell_owner(f"✅ Marcado como listo: «{elegido.content[:60]}».")
+        return
+
+    postpone_match = re.search(
+        r"\b(aplaz\w*|pospon\w*|reprogram\w*|más tarde|mas tarde)\b",
+        text_lower,
+    )
+    if postpone_match:
+        pendings = await pending_reminders()
+        objetivo = (intent.message_text or intent.description or "").strip().lower()
+        elegido = next(
+            (r for r in pendings if objetivo and objetivo[:12] in r.content.lower()),
+            None,
+        )
+        if elegido is None and len(pendings) == 1:
+            elegido = pendings[0]
+        if elegido is None or not intent.remind_at:
+            await list_reminders()
+            await tell_owner(
+                "Dime cuál aplazar y para cuándo, por ejemplo: "
+                "«aplaza la llamada para mañana a las 9»."
+            )
+            return
+        try:
+            new_time = dt.fromisoformat(intent.remind_at)
+            if new_time.tzinfo is None:
+                new_time = (new_time + timedelta(hours=5)).replace(tzinfo=UTC)
+        except ValueError:
+            await tell_owner("No entendí la nueva fecha. ¿Para cuándo lo aplazo?")
+            return
+        await notes_service.reschedule_reminder(
+            db,
+            tenant_id=tenant.id,
+            reminder_id=elegido.id,
+            remind_at=new_time,
+        )
+        when = to_colombia(new_time).strftime("%d/%m a las %I:%M %p")
+        await tell_owner(f"🔁 Aplazado: «{elegido.content[:60]}» para el {when}.")
         return
 
     # Consultar: pregunta sobre recordatorios SIN contenido nuevo que crear
@@ -1529,12 +1691,19 @@ async def _handle_reminder(
         )
         remind_at = tomorrow_col + timedelta(hours=5)
 
-    await notes_service.save_reminder(
+    reminder = await notes_service.save_reminder(
         db, tenant_id=tenant.id, content=content, remind_at=remind_at
     )
+    await notes_service.sync_reminder_to_google(db, reminder)
     # Formatear la fecha para mostrar (hora Colombia = UTC-5)
     when = to_colombia(remind_at).strftime("%d/%m a las %I:%M %p")
-    await tell_owner(f"⏰ Listo: te recordaré «{content}» el {when}.")
+    if reminder.google_sync_status == "synced":
+        await tell_owner(
+            f"⏰ Listo: te recordaré «{content}» el {when} por WhatsApp "
+            f"y Google Calendar."
+        )
+    else:
+        await tell_owner(f"⏰ Listo: te recordaré «{content}» el {when} por WhatsApp.")
 
 
 async def _handle_confirmation(
@@ -2220,7 +2389,8 @@ async def _handle_manage_services(
             allowed = await module_allowed(db, plan=tenant.plan, module_key=m["key"])
             status = "🟢" if enabled else ("⚪" if allowed else "🔴")
             lines.append(f"{status} {m['name']}")
-        lines.append("\n🟢 = activo · ⚪ = disponible (tu plan lo permite) · 🔴 = no incluido en tu plan")
+        lines.append("\n🟢 = activo · ⚪ = disponible (tu plan lo permite)")
+        lines.append("🔴 = no incluido en tu plan")
         lines.append("\nPara activar: «activa [nombre]» · Para desactivar: «desactiva [nombre]»")
         await tell_owner("\n".join(lines))
         return
@@ -2234,14 +2404,18 @@ async def _handle_manage_services(
 
     # Verificar que el servicio existe
     if service_key not in MODULES_BY_KEY:
-        await tell_owner(f"No conozco el servicio «{service_name}». Dime «qué servicios tengo» para ver la lista.")
+        await tell_owner(
+            f"No conozco el servicio «{service_name}». "
+            "Dime «qué servicios tengo» para ver la lista."
+        )
         return
 
     # Verificar si el plan lo permite
     allowed = await module_allowed(db, plan=tenant.plan, module_key=service_key)
     if not allowed:
+        svc = MODULES_BY_KEY[service_key]["name"]
         await tell_owner(
-            f"⚠️ **{MODULES_BY_KEY[service_key]['name']}** no está incluido en tu plan **{tenant.plan}**.\n"
+            f"⚠️ **{svc}** no está incluido en tu plan **{tenant.plan}**.\n"
             "Actualiza a Premium desde el panel para desbloquearlo."
         )
         return
@@ -2265,7 +2439,10 @@ async def _handle_manage_services(
                 is_enabled=True,
             ))
         await db.commit()
-        await tell_owner(f"✅ **{MODULES_BY_KEY[service_key]['name']}** activado. Ya puedes usarlo.")
+        await tell_owner(
+            f"✅ **{MODULES_BY_KEY[service_key]['name']}** activado. "
+            "Ya puedes usarlo."
+        )
         return
 
     if action in ("disable", "desactiva", "apaga", "apagar", "desactiva"):
@@ -2530,6 +2707,296 @@ async def _handle_add_contact(
         "o una nota (ej: «cliente obra San Diego»)?"
     )
     logger.info("Contacto %s creado por chat (tenant %s)", name, tenant.id)
+
+
+# ── CRM: editar contacto por chat ──────────────────────────────────────────
+
+
+async def _handle_edit_contact(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Edita un contacto existente (nombre, teléfono, email, notas)."""
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    name = (intent.contact_name or "").strip()
+    if not name:
+        await tell_owner("¿Qué contacto quieres editar? Dime el nombre.")
+        return
+
+    # Buscar el contacto por nombre (case-insensitive)
+    from sqlalchemy import func, select
+    result = await db.execute(
+        select(Contact).where(
+            Contact.tenant_id == tenant.id,
+            func.lower(Contact.name) == name.lower(),
+            Contact.is_active.is_(True),
+        )
+    )
+    contact = result.scalar_one_or_none()
+
+    if not contact:
+        await tell_owner(f"No encontré a **{name}** en tus contactos activos.")
+        return
+
+    updated = []
+
+    # Detectar nuevo nombre: "edita a X a Y", "edita X a Y" o "cambia X a Y".
+    # El "a" tras el verbo es opcional (preposición); el nombre capturado
+    # debe empezar por letra (evita confundir un número con nombre).
+    import re as _re
+    _name_re = (
+        r"(?:edita|cambia)\s+(?:a\s+)?\S+\s+a\s+"
+        r"([A-Za-zÁÉÍÓÚÜÑáéíóúüñ].+?)(?:\s+(?:con|tel[eé]fono|email|nota)|$)"
+    )
+    match = _re.search(_name_re, text, _re.IGNORECASE)
+    if match:
+        new_name = match.group(1).strip().rstrip(".,;")
+        if new_name:
+            contact.name = new_name[:100]
+            updated.append("nombre")
+
+    # Teléfono: el router del LLM lo extrae en contact_phone; el texto
+    # crudo es respaldo ("teléfono 300…", "teléfono de X a 300…").
+    digits = _re.sub(r"\D", "", intent.contact_phone or "")
+    if not digits:
+        _phone_re = (
+            r"(?:tel[eé]fono|celular|n[uú]mero)\s+"
+            r"(?:de\s+\S+\s+)?(?:a\s+)?([\d\s\-+().]{8,})"
+        )
+        phone_match = _re.search(_phone_re, text, _re.IGNORECASE)
+        if phone_match:
+            digits = _re.sub(r"\D", "", phone_match.group(1))
+    if len(digits) == 10:
+        digits = "57" + digits
+    if len(digits) >= 10 and len(digits) <= 15 and digits.isdigit():
+        # Verificar duplicado
+        existing = await db.execute(
+            select(Contact).where(
+                Contact.tenant_id == tenant.id,
+                Contact.wa_id == digits,
+                Contact.id != contact.id,
+            )
+        )
+        if not existing.scalar_one_or_none():
+            contact.wa_id = digits
+            updated.append("teléfono")
+        else:
+            await tell_owner("Ese número ya pertenece a otro contacto.")
+            return
+
+    # Email: "email juan@email.com" o "correo juan@email.com"
+    email_match = _re.search(r"(?:email|correo)\s+([\w.+-]+@[\w.-]+\.\w+)", text, _re.IGNORECASE)
+    if email_match:
+        contact.email = email_match.group(1).lower()
+        updated.append("email")
+
+    # Nota: "nota cliente VIP", "agrega nota a Juan: cliente VIP"…
+    note_match = _re.search(
+        r"(?:agrega nota|ponle nota|nota)(?:\s+a\s+\S+)?[:\s]+(.+)", text, _re.IGNORECASE
+    )
+    if note_match:
+        note = note_match.group(1).strip()
+        contact.notes = (contact.notes or "") + ("\n" if contact.notes else "") + note
+        updated.append("nota")
+
+    # Fallback con el contrato del router: description trae el nombre
+    # nuevo (o el email/nota si el texto crudo no matcheó arriba).
+    if not updated and intent.description:
+        desc = intent.description.strip()
+        if "@" in desc:
+            contact.email = desc.lower()
+            updated.append("email")
+        elif "nota" in text.lower():
+            contact.notes = (contact.notes or "") + ("\n" if contact.notes else "") + desc
+            updated.append("nota")
+        else:
+            contact.name = desc[:100]
+            updated.append("nombre")
+
+    if not updated:
+        await tell_owner(
+            f"¿Qué quieres cambiar de **{contact.name}**?\n"
+            "Ejemplos:\n"
+            "• «edita a Juliana a Juliana Pérez»\n"
+            "• «cambia el teléfono de Pedro a 3109876543»\n"
+            "• «ponle email a María: maria@email.com»\n"
+            "• «agrega nota a Juan: cliente VIP»"
+        )
+        return
+
+    await db.commit()
+    await tell_owner(
+        f"✏️ **{contact.name}** actualizado: {', '.join(updated)}."
+    )
+    logger.info("Contacto %s editado por chat (tenant %s)", contact.name, tenant.id)
+
+
+# ── CRM: borrar (desactivar) contacto por chat ─────────────────────────────
+
+
+async def _handle_delete_contact(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Desactiva un contacto (soft delete)."""
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    name = (intent.contact_name or "").strip()
+    if not name:
+        await tell_owner("¿Qué contacto quieres borrar? Dime el nombre.")
+        return
+
+    from sqlalchemy import func, select
+    result = await db.execute(
+        select(Contact).where(
+            Contact.tenant_id == tenant.id,
+            func.lower(Contact.name) == name.lower(),
+            Contact.is_active.is_(True),
+        )
+    )
+    contact = result.scalar_one_or_none()
+
+    if not contact:
+        await tell_owner(f"No encontré a **{name}** en tus contactos activos.")
+        return
+
+    contact.is_active = False
+    await db.commit()
+
+    await tell_owner(
+        f"🗑️ **{name}** retirado del CRM (su historial se conserva)."
+    )
+    logger.info("Contacto %s desactivado por chat (tenant %s)", name, tenant.id)
+
+
+# ── CRM: listar contactos por chat ─────────────────────────────────────────
+
+
+async def _handle_list_contacts(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Lista los contactos activos del tenant."""
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Contact)
+        .where(
+            Contact.tenant_id == tenant.id,
+            Contact.is_active.is_(True),
+            Contact.wa_id != wa_id,
+        )
+        .order_by(Contact.name)
+        .limit(20)
+    )
+    contacts = result.scalars().all()
+
+    if not contacts:
+        await tell_owner(
+            "No tienes contactos guardados aún. "
+            "Usa «agrega a [nombre] con número [celular]»."
+        )
+        return
+
+    lines = [f"📇 *Tus contactos ({len(contacts)}):*"]
+    for c in contacts:
+        tags = f" [{', '.join(c.tags)}]" if c.tags else ""
+        lines.append(f"• **{c.name}** — {c.wa_id}{tags}")
+
+    await tell_owner("\n".join(lines))
+    logger.info("Listado de contactos por chat (tenant %s)", tenant.id)
+
+
+# ── CRM: ver detalle de contacto por chat ──────────────────────────────────
+
+
+async def _handle_view_contact(
+    db: AsyncSession,
+    *,
+    tenant: Tenant,
+    channel: Channel,
+    conversation: Conversation,
+    wa_id: str,
+    intent: AssistantIntent,
+    text: str = "",
+) -> None:
+    """Muestra el detalle de un contacto."""
+
+    async def tell_owner(msg: str) -> None:
+        await _send_out_message(
+            db, tenant_id=tenant.id, conversation=conversation,
+            channel=channel, wa_id=wa_id, text=msg,
+        )
+
+    name = (intent.contact_name or "").strip()
+    if not name:
+        await tell_owner("¿De qué contacto quieres ver el detalle? Dime el nombre.")
+        return
+
+    from sqlalchemy import func, select
+    result = await db.execute(
+        select(Contact).where(
+            Contact.tenant_id == tenant.id,
+            func.lower(Contact.name) == name.lower(),
+            Contact.is_active.is_(True),
+        )
+    )
+    contact = result.scalar_one_or_none()
+
+    if not contact:
+        await tell_owner(f"No encontré a **{name}** en tus contactos activos.")
+        return
+
+    lines = [
+        f"👤 *{contact.name}*",
+        f"📱 Teléfono: {contact.wa_id}",
+    ]
+    if contact.email:
+        lines.append(f"📧 Email: {contact.email}")
+    if contact.address:
+        lines.append(f"📍 Dirección: {contact.address}")
+    if contact.notes:
+        lines.append(f"📝 Notas: {contact.notes}")
+    if contact.tags:
+        lines.append(f"🏷️ Etiquetas: {', '.join(contact.tags)}")
+
+    await tell_owner("\n".join(lines))
+    logger.info("Detalle de contacto %s por chat (tenant %s)", contact.name, tenant.id)
 
 
 # ── Navegación web ─────────────────────────────────────────────────────────
@@ -3060,13 +3527,35 @@ async def handle_incoming(
 
     # ── El dueño o su equipo le hablan al asistente ────────────────────────
 
+    # El acceso al panel debe funcionar aunque el dueño haya apagado el
+    # cotizador: es una capacidad de cuenta, no un servicio contratado.
+    wa_id = contact.wa_id
+    text = (text_override or message.content or "").strip()
+    if _requests_google_connection(text):
+        await _handle_google_connection(
+            db,
+            tenant=tenant,
+            channel=channel,
+            conversation=conversation,
+            wa_id=wa_id,
+        )
+        return
+    if _requests_panel_access(text):
+        await _handle_panel_access(
+            db,
+            tenant=tenant,
+            channel=channel,
+            conversation=conversation,
+            wa_id=wa_id,
+        )
+        return
+
     # El asistente solo atiende con el cotizador encendido (contrato del plan)
     if not await _quoter_enabled(db, tenant.id):
         return
 
     # Motor de disponibilidad (adendo §5): si un servicio que el dueño
     # encendió está caído/en mantenimiento, el bot lo dice con claridad.
-    wa_id = contact.wa_id
     # El lote unificado (debounce) llega como text_override; si no, el propio
     text = (text_override or message.content or "").strip()
     _t0 = datetime.now(UTC)  # para medir la latencia percibida por el dueño
@@ -3108,6 +3597,26 @@ async def handle_incoming(
             return
 
         intent = await assistant_service.detect_intent(tenant=tenant, text=text)
+
+        if intent.intention == "google_connect":
+            await _handle_google_connection(
+                db,
+                tenant=tenant,
+                channel=channel,
+                conversation=conversation,
+                wa_id=wa_id,
+            )
+            return
+
+        if intent.intention == "panel_access":
+            await _handle_panel_access(
+                db,
+                tenant=tenant,
+                channel=channel,
+                conversation=conversation,
+                wa_id=wa_id,
+            )
+            return
 
         # ¿Confirmación de una acción pendiente? (spec §9.1: efecto externo
         # requiere confirmación explícita del dueño)
@@ -3333,6 +3842,42 @@ async def handle_incoming(
                 conversation=conversation, wa_id=wa_id, intent=intent,
                 text=text,
             )
+            return
+
+        # CRM: editar, borrar, listar y ver contactos
+        if intent.intention in ("edit_contact", "delete_contact", "list_contacts", "view_contact"):
+            usable, why = await _module_usable(db, tenant=tenant, module_key="crm")
+            if not usable and why:
+                await _send_out_message(
+                    db, tenant_id=tenant.id, conversation=conversation,
+                    channel=channel, wa_id=wa_id, text=f"⚠️ {why}. Te aviso cuando vuelva.",
+                )
+                return
+
+            if intent.intention == "edit_contact":
+                await _handle_edit_contact(
+                    db, tenant=tenant, channel=channel,
+                    conversation=conversation, wa_id=wa_id, intent=intent,
+                    text=text,
+                )
+            elif intent.intention == "delete_contact":
+                await _handle_delete_contact(
+                    db, tenant=tenant, channel=channel,
+                    conversation=conversation, wa_id=wa_id, intent=intent,
+                    text=text,
+                )
+            elif intent.intention == "list_contacts":
+                await _handle_list_contacts(
+                    db, tenant=tenant, channel=channel,
+                    conversation=conversation, wa_id=wa_id, intent=intent,
+                    text=text,
+                )
+            elif intent.intention == "view_contact":
+                await _handle_view_contact(
+                    db, tenant=tenant, channel=channel,
+                    conversation=conversation, wa_id=wa_id, intent=intent,
+                    text=text,
+                )
             return
 
         if intent.intention == "sync_contacts":

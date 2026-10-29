@@ -4,14 +4,40 @@ El dueño del negocio conecta **su propia cuenta de Google** desde el panel
 (Mi negocio → Conectar Google) y el asistente puede entonces, **por chat de
 WhatsApp**:
 
+También puede escribir **«conectar Google»**, **«quiero vincular mi Gmail»** o
+**«autoriza mi calendario de Google»**. Aura envía la URL de consentimiento
+directamente al chat; el `state` firmado vincula la autorización con el tenant
+y vence en 10 minutos. Después de aceptar los permisos, Google vuelve al panel
+y guarda la conexión sin pedir credenciales por WhatsApp.
+
+## Acceso híbrido al panel
+
+El panel ofrece dos métodos de acceso:
+
+- **Continuar con Google**: escribe primero el correo registrado y autoriza la
+  cuenta Google que tenga ese mismo correo verificado.
+- **Correo y contraseña**: usa el enlace de creación de contraseña recibido al
+  terminar el registro por WhatsApp.
+
+Google solo activa una cuenta que ya fue registrada por WhatsApp y cuyo correo
+coincide exactamente. El flujo usa un `state` firmado y de corta duración;
+Google no recibe ni se almacena ninguna contraseña. La autenticación de Google
+activa el usuario pendiente y luego emite el mismo token de sesión que el
+login tradicional. Esto es independiente de autorizar Calendar, Gmail u otros
+servicios: iniciar sesión con Google no concede esos permisos automáticamente.
+
 | Comando de chat | Qué hace |
 |---|---|
 | «resumime el correo» | Lista los últimos correos de su bandeja (solo lectura) |
 | «escríbele un correo a Juliana diciendo que llego a las 3» | Prepara el borrador y pide **confirmación** antes de enviar |
 | «qué tengo hoy / mañana / esta semana» | Su agenda de Google Calendar |
 | «agenda visita de Juliana el jueves a las 3» | Crea el evento en su calendario |
+| «recuérdame llamar a Juliana mañana a las 9» | Crea el recordatorio local, avisa por WhatsApp y sincroniza un evento en Calendar |
+| «aplaza la llamada para mañana a las 10» | Mueve el recordatorio local y el evento de Calendar |
+| «ya quedó listo el recordatorio de la llamada» | Marca el recordatorio como completado |
 | «pasa mis gastos a una hoja» | Exporta los gastos del mes a una hoja de cálculo nueva |
 | «genera un informe del mes» | Documento en Google Docs con gastos y cotizaciones del mes |
+| «guarda una nota: comprar cable» | Guarda la nota local y la sincroniza con Google Keep o Google Docs |
 
 Y desde el panel (API): encuesta de satisfacción en Google Forms
 (`POST /api/v1/google/forms/satisfaction-survey`) y archivos recientes de
@@ -46,6 +72,7 @@ cuenta con ese client y sus tokens quedan en **su** fila
      | Sheets | `https://www.googleapis.com/auth/spreadsheets` |
      | Drive (solo archivos de la app) | `https://www.googleapis.com/auth/drive.file` |
      | Docs | `https://www.googleapis.com/auth/documents` |
+     | Google Keep (Workspace compatible) | `https://www.googleapis.com/auth/keep` |
      | Forms | `https://www.googleapis.com/auth/forms.body` |
 
    - **Test users**: mientras la app esté en modo «Testing», agrega el
@@ -69,6 +96,8 @@ cuenta con ese client y sus tokens quedan en **su** fila
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxx
    # Opcional — vacío → {PANEL_BASE_URL}/google/callback
    GOOGLE_REDIRECT_URI=
+   # true solo si el proyecto usa Google Workspace compatible con Keep
+   GOOGLE_KEEP_ENABLED=false
    ```
 
    Reinicia el backend. Sin estas variables el endpoint
@@ -137,6 +166,13 @@ sesión expirada (reconectar), `422` = plataforma sin credenciales,
 - **Menor privilegio**: `drive.file` (solo lo creado por la app),
   `gmail.readonly` + `gmail.send` (ni borrar ni etiquetas), Forms solo
   para crear el cuerpo de la encuesta.
+- **Recordatorios resilientes**: el recordatorio local es la fuente de
+  verdad. Si Calendar no está conectado o falla, WhatsApp sigue funcionando y
+  la agenda conserva el estado de sincronización para reintentar.
+- **Notas externas**: Google Keep se usa cuando el consentimiento incluye el
+  scope `keep` y la cuenta es compatible con Workspace. Para cuentas
+  personales o cuando `GOOGLE_KEEP_ENABLED=false` se crea un Google Doc por
+  nota; la copia local siempre se conserva.
 
 ## 5. Detalles técnicos
 

@@ -5,7 +5,10 @@ export interface User {
   role: string
   tenant_id: string
   bot_name: string
+  tenant_name?: string
+  plan?: string
   is_platform_admin: boolean
+  is_impersonating?: boolean
 }
 
 export interface PlanPrice {
@@ -43,9 +46,27 @@ export interface FeedEvent {
     direction?: string
     preview?: string | null
   }
+
 }
 
 export type WsStatus = "connecting" | "open" | "closed"
+
+export interface ActiveBotUser {
+  contact_id: string
+  name: string
+  wa_id: string
+  last_activity_at: string
+  last_direction: 'in' | 'out'
+  messages: number
+}
+
+export interface RealtimeActivity {
+  window_minutes: number
+  active_now: number
+  messages_in_window: number
+  last_activity_at: string | null
+  users: ActiveBotUser[]
+}
 
 export interface Module {
   key: string
@@ -247,6 +268,8 @@ export interface Reminder {
   status: string
   sent_at: string | null
   created_at: string
+  google_event_id?: string | null
+  google_sync_status?: 'local' | 'synced' | 'auth_error' | 'error'
 }
 
 export interface Branding {
@@ -263,9 +286,26 @@ export interface GoogleStatus {
   scopes: string[]
 }
 
+export interface GoogleContactsStatus {
+  connected: boolean
+  contacts_permission: boolean
+  google_email: string | null
+}
+
+export interface GoogleContactsImportResult {
+  total: number
+  created: number
+  updated: number
+  unchanged: number
+  skipped_no_phone: number
+}
+
 export interface GoogleCallbackResult {
   connected: boolean
   google_email: string
+  authenticated?: boolean
+  access_token?: string | null
+  user?: User | null
 }
 
 export interface GmailSummaryItem {
@@ -447,6 +487,10 @@ export interface AdminTenantContact extends Contact {
   tenant_id: string
 }
 
+export interface AdminTenantContactPage extends Omit<ContactPage, 'items'> {
+  items: AdminTenantContact[]
+}
+
 export interface AdminTenantContactDetail extends ContactDetail {
   tenant_id: string
 }
@@ -508,6 +552,28 @@ export interface AdminTenantDetail extends AdminTenant {
     current_period_end: string | null
     created_at: string
   } | null
+}
+
+export interface PlatformServiceStat {
+  key: string
+  name: string
+  interactions: number
+  tenants: number
+}
+
+export interface PlatformPlanStat {
+  plan: string
+  count: number
+}
+
+export interface PlatformAdminStats {
+  total_tenants: number
+  active_tenants: number
+  blocked_tenants: number
+  total_messages: number
+  total_quotes: number
+  services: PlatformServiceStat[]
+  plans: PlatformPlanStat[]
 }
 
 export interface AdminConversation {

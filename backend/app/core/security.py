@@ -26,13 +26,16 @@ def create_access_token(
     tenant_id: uuid.UUID,
     role: str,
     expires_delta: timedelta | None = None,
+    extra_claims: dict[str, Any] | None = None,
 ) -> str:
     """Create a JWT access token."""
-    to_encode = {
+    to_encode: dict[str, Any] = {
         "sub": str(user_id),
         "tenant_id": str(tenant_id),
         "role": role,
     }
+    if extra_claims:
+        to_encode.update(extra_claims)
     if expires_delta:
         expire = datetime.now(UTC) + expires_delta
     else:

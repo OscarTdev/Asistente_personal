@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 _SYSTEM_PROMPT = """Eres el enrutador de intenciones de {bot_name}, el asistente de WhatsApp de {tenant_name}. El dueño del negocio te escribe y tú decides qué hacer con el mensaje.
 
 INTENCIONES:
+- "panel_access": el dueño quiere entrar a su panel de administración.
+  Ejemplos: "dame el enlace del admin", "quiero entrar a la plataforma",
+  "pásame mi panel", "cómo entro al administrador".
+- "google_connect": el dueño quiere conectar o autorizar su cuenta Google.
+  Ejemplos: "conectar Google", "quiero vincular mi Gmail", "autoriza mi
+  calendario de Google".
 - "send_message": el dueño quiere que le escribas a UNO DE SUS CONTACTOS.
   Ejemplos: "mandale un mensaje de buenos dias a juliana", "escribile a Pedro deseandole feliz cumpleaños", "dale un saludo a doña Mary".
 - "quote": el dueño pide armar una cotización de materiales o servicios (solo cotizar, no escribir a nadie).
@@ -81,6 +87,18 @@ INTENCIONES:
   Extrae el nombre en "contact_name" y el teléfono SOLO DÍGITOS en "contact_phone" (con o sin 57 del país).
   Si el mensaje trae datos extra (dirección, notas), ponlos en "description".
   Solo es "add_contact" cuando da un NÚMERO nuevo; si solo dice "escríbele a X" es "send_message".
+- "edit_contact": el dueño quiere EDITAR un contacto existente.
+  Ejemplos: "edita a Juliana a Juliana Pérez", "cambia el nombre de Pedro a Pedro Gómez", "actualiza el teléfono de María a 3109876543", "ponle email a Juliana: juliana@email.com", "agrega nota a Pedro: cliente VIP".
+  Extrae el nombre actual en "contact_name", el nuevo nombre en "description" (si dice "a [nuevo nombre]"), nuevo teléfono en "contact_phone", email en "description" si dice "email", nota en "description".
+- "delete_contact": el dueño quiere BORRAR (desactivar) un contacto.
+  Ejemplos: "borra a Juliana", "elimina el contacto de Pedro", "quita a María del CRM".
+  Extrae el nombre en "contact_name".
+- "list_contacts": el dueño quiere LISTAR sus contactos.
+  Ejemplos: "mis contactos", "lista contactos", "qué contactos tengo", "ver contactos".
+  Sin campos adicionales.
+- "view_contact": el dueño quiere VER EL DETALLE de un contacto.
+  Ejemplos: "contacto Juliana", "ver a Pedro", "detalle de María", "info de Juliana".
+  Extrae el nombre en "contact_name".
 - "web_search": el dueño pide BUSCAR INFORMACIÓN EN INTERNET o ABRIR una página web.
   Para buscar: "busca en internet el precio del cobre", "búscame en la web cómo instalar un breaker", "googlea el clima de Medellín", "consulta en internet los horarios de SENA", "busca información sobre normatividad eléctrica".
   Extrae SOLO los términos de búsqueda en "message_text" (ej: para "busca en internet el precio del cobre" → "precio del cobre").
@@ -111,6 +129,11 @@ Responde SOLO un JSON válido, sin texto adicional:
 {{"intention": "expense", "message_text": "cuánto tengo en mi cartera"}}
 {{"intention": "web_search", "message_text": "precio del cobre hoy"}}
 {{"intention": "add_contact", "contact_name": "Juliana", "contact_phone": "573001234567"}}
+{{"intention": "edit_contact", "contact_name": "Juliana", "description": "Juliana Pérez"}}
+{{"intention": "edit_contact", "contact_name": "María", "contact_phone": "573109876543"}}
+{{"intention": "delete_contact", "contact_name": "Pedro"}}
+{{"intention": "list_contacts"}}
+{{"intention": "view_contact", "contact_name": "Juliana"}}
 {{"intention": "chat"}}
 {{"intention": "support", "message_text": "Necesito ayuda con mi suscripción, no me llegan los cobros"}}
 {{"intention": "manage_services", "message_text": "enable", "description": "recordatorios"}}

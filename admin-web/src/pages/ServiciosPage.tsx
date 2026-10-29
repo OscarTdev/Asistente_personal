@@ -4,14 +4,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
-import Card from '../components/ui/card'
-import Switch from '../components/ui/switch'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
-import { IconEnter } from '../components/ui/icons'
+import { Card } from "../components/ui/card"
+import { Switch } from "../components/ui/switch"
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
+import { IconArrowLeft } from "@/components/ui/icons"
 import { useModules, useToggleModule } from '../hooks/useModules'
 import { usePlanEntitlements, useUpdatePlanEntitlement } from '../hooks/usePlans'
-import { Module } from '../types'
+import { Module, PlanEntitlementItem } from '../types'
 
 // Stationery ink chips — muted tints, one per service identity
 const CHIP_COLORS: Array<[string, string]> = [
@@ -64,12 +64,14 @@ function ServiceCard({
             {module.is_custom ? ' · personalizado' : ''}
           </div>
         </div>
-        <Switch
-          checked={module.is_enabled}
-          disabled={inDevelopment || toggling}
-          onChange={(value) => onToggle(module, value)}
-          label={`Encender o apagar ${module.name}`}
-        />
+        <div className="flex items-center gap-2">
+            <Switch
+              checked={module.is_enabled}
+              disabled={inDevelopment || toggling}
+              onCheckedChange={(value: boolean) => onToggle(module, value)}
+            />
+            <span className="text-sm" style={{ color: 'var(--color-ink)' }}>Encender o apagar {module.name}</span>
+          </div>
       </div>
       <p className="mt-3 min-h-[2.5rem] text-sm text-ink-soft">{module.description}</p>
       <div className="mt-4 flex items-center justify-between">
@@ -88,7 +90,7 @@ function ServiceCard({
         )}
         {module.dev_status === 'active' && module.is_enabled && module.workspace && (
           <Button type="button" variant="outline" size="sm" onClick={() => onEnter(module)}>
-            <IconEnter className="h-4 w-4" />
+            <IconArrowLeft className="h-4 w-4" />
             Entrar
           </Button>
         )}
@@ -136,7 +138,7 @@ function EntitlementsMatrix() {
             <thead>
               <tr className="thead-edge bg-linen-50 text-left">
                 <th className="plate-label px-3 py-2 font-semibold">Servicio</th>
-                {plans.map((p) => (
+                {plans.map((p: {key: string, label: string}) => (
                   <th key={p.key} className="plate-label px-3 py-2 text-center font-semibold">
                     {p.label}
                   </th>
@@ -144,13 +146,13 @@ function EntitlementsMatrix() {
               </tr>
             </thead>
             <tbody>
-              {[...new Set((data ?? []).map((i) => i.module_key))].map((moduleKey) => {
+              {[...new Set((data ?? []).map((i: PlanEntitlementItem) => i.module_key))].map((moduleKey: string) => {
                 const name =
                   data?.find((i) => i.module_key === moduleKey)?.module_name ?? moduleKey
                 return (
                   <tr key={moduleKey} className="border-b border-linen-100 last:border-0">
                     <td className="px-3 py-2 font-medium text-ink">{name}</td>
-                    {plans.map((p) => {
+                    {plans.map((p: {key: string, label: string}) => {
                       const item = cell(moduleKey, p.key)
                       return (
                         <td key={p.key} className="px-3 py-2 text-center">
@@ -158,8 +160,7 @@ function EntitlementsMatrix() {
                             <Switch
                               checked={item?.allowed ?? false}
                               disabled={update.isLoading}
-                              onChange={(value) => handleToggle(moduleKey, p.key, value)}
-                              label={`${name} en ${p.label}`}
+                              onCheckedChange={(value: boolean) => handleToggle(moduleKey, p.key, value)}
                             />
                           </div>
                         </td>
@@ -230,7 +231,7 @@ export default function ServiciosPage() {
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((index) => (
+          {[0, 1, 2].map((index: number) => (
             <div key={index} className="ficha p-5">
               <div className="skel h-5 w-2/3" />
               <div className="skel mt-3 h-3 w-1/3" />
@@ -244,7 +245,7 @@ export default function ServiciosPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {modules
             .filter((module) => !module.parent)
-            .map((module) => (
+            .map((module: Module) => (
             <div
               key={module.key}
               className={`rounded-lg ${heldKey === module.key ? 'row-hold' : ''}`}

@@ -2,9 +2,9 @@
 // los PDFs, y más adelante pie de página y datos bancarios.
 // (El Admin de la plataforma es otra cosa: los clientes del dueño global.)
 
-import Card from '../components/ui/card'
-import Button from '../components/ui/button'
-import ErrorSlip from '../components/ui/error-slip'
+import { Card } from "../components/ui/card"
+import { Button } from "../components/ui/button"
+import { ErrorSlip } from "../components/ui/error-slip"
 import { useAuth } from '../auth/AuthContext'
 import {
   useBranding,

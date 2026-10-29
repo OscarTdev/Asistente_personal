@@ -2,9 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import ws
 from app.api.v1 import api_router
+from app.core.config import get_settings
+from app.core.database import engine
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +64,8 @@ async def _subscriptions_loop() -> None:
                 if mt_sent:
                     logger.info("Mantenimientos enviados: %d", mt_sent)
 
-                # 2) Recordatorios que ya llegaron a su hora
-                for reminder in await due_reminders(db):
+                # 3) Recordatorios: principal + pre-notificaciones (2h y 30min antes)
+                for reminder, notif_type in await due_reminders(db):
                     try:
                         from sqlalchemy import select
 
@@ -89,21 +92,27 @@ async def _subscriptions_loop() -> None:
                             continue
 
                         channel = get_channel("evolution")
-                        await channel.send_text(
-                            owner_contact.wa_id,
-                            f"⏰ Recordatorio: {reminder.content}",
-                        )
-                        await mark_reminder_sent(db, reminder)
+
+                        # Mensaje según tipo de notificación
+                        if notif_type == "2h":
+                            msg = f"⏰ Recordatorio en 2 horas: {reminder.content}"
+                        elif notif_type == "30m":
+                            msg = f"⏰ Recordatorio en 30 minutos: {reminder.content}"
+                        else:  # main
+                            msg = f"⏰ Recordatorio: {reminder.content}"
+
+                        await channel.send_text(owner_contact.wa_id, msg)
+                        await mark_reminder_sent(db, reminder, notif_type)
                         logger.info(
-                            "Recordatorio %s enviado (tenant %s)",
-                            reminder.id, tenant.slug,
+                            "Recordatorio %s enviado tipo %s (tenant %s)",
+                            reminder.id, notif_type, tenant.slug,
                         )
                     except Exception:
                         logger.exception(
                             "No se pudo enviar el recordatorio %s", reminder.id
                         )
 
-                # 3) Resumen diario proactivo (adendo: el módulo que hace
+                # 4) Resumen diario proactivo (adendo: el módulo que hace
                 #    volver al usuario) — solo una vez al día, en la mañana
                 from datetime import UTC, datetime
 
@@ -130,25 +139,105 @@ async def _subscriptions_loop() -> None:
         await asyncio.sleep(300)  # cada 5 minutos
 
 
+async def _guardian_loop() -> None:
+    """Guardián LLM: monitorea salud de proveedores IA cada 10 min."""
+    import asyncio
+
+    from app.core.database import SessionFactory
+    from app.workers.guardian import guardian_task
+
+    await asyncio.sleep(240)  # arranque en frío: da tiempo a que todo suba
+    while True:
+        try:
+            async with SessionFactory():
+                # Simular contexto ARQ
+                ctx = {}
+                result = await guardian_task(ctx)
+                if result.get("applied"):
+                    logger.info("🛡️ Guardián aplicó cambios: %s", result["applied"])
+                elif result.get("status") == "completed":
+                    logger.debug("🛡️ Guardián: chequeo OK, sin acciones")
+        except Exception:
+            logger.exception("Falló el ciclo del guardián IA")
+        await asyncio.sleep(600)  # cada 10 minutos
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import asyncio
 
+    # Verificar sincronización NTP sin bloquear el arranque (los
+    # servidores NTP pueden tardar hasta 20s si hay firewall).
+    from app.services.ntp_sync import sync_system_time_if_needed
+    ntp_task = asyncio.create_task(sync_system_time_if_needed())
+
     task = asyncio.create_task(_followup_loop())
     subscriptions_task = asyncio.create_task(_subscriptions_loop())
+    guardian_task = asyncio.create_task(_guardian_loop())
     yield
+    ntp_task.cancel()
     task.cancel()
     subscriptions_task.cancel()
+    guardian_task.cancel()
 
 
 app = FastAPI(title="Asistente Personal API", lifespan=lifespan)
 
+# CORS: permitir panel local y túneles (ngrok, cloudflared)
+settings = get_settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        settings.panel_base_url,
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_origin_regex=r"https://.*\.ngrok-free\.app|https://.*\.trycloudflare\.com",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(ws.router)
 
+
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """Health check real: verifica DB y Redis."""
+    from redis.asyncio import Redis, from_url
+    from sqlalchemy import text
+
+    from app.core.config import get_settings
+
+    # Check DB
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception as e:
+        print(f"DB error: {e}")
+        db_ok = False
+
+    # Check Redis
+    try:
+        redis: Redis = from_url(get_settings().redis_url, decode_responses=True)
+        try:
+            result = await redis.ping()
+            print(f"Redis ping result: {result}")
+            redis_ok = True
+        finally:
+            await redis.aclose()
+    except Exception as e:
+        print(f"Redis error: {e}")
+        redis_ok = False
+
+    status = "ok" if db_ok and redis_ok else "degraded"
+    return {
+        "status": status,
+        "database": "ok" if db_ok else "error",
+        "redis": "ok" if redis_ok else "error",
+    }
 
 
 if __name__ == "__main__":

@@ -18,6 +18,10 @@ class GoogleAuthorizeResult(BaseModel):
     authorization_url: str
 
 
+class GoogleLoginAuthorizeRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+
+
 class GoogleCallbackPayload(BaseModel):
     """Lo que Google devuelve al panel tras el consentimiento."""
 
@@ -28,6 +32,9 @@ class GoogleCallbackPayload(BaseModel):
 class GoogleCallbackResult(BaseModel):
     connected: bool
     google_email: str
+    authenticated: bool = False
+    access_token: str | None = None
+    user: dict | None = None
 
 
 class GoogleDisconnectResult(BaseModel):

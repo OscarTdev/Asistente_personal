@@ -7,7 +7,16 @@ import App from './App'
 import './index.css'
 
 // Create a QueryClient instance
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error: any) => {
+        if (error?.status === 401) return false
+        return failureCount < 3
+      },
+    },
+  },
+})
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>

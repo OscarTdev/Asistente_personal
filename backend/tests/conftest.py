@@ -123,6 +123,10 @@ async def client(db_session: AsyncSession) -> AsyncIterator[AsyncClient]:
     webhooks_module._process_message = _immediate_process
 
     app.dependency_overrides[get_db] = override_get_db
+    # Reset rate limiter so tests don't hit 429 from previous tests
+    from app.core.rate_limit import reset_rate_limiter
+    reset_rate_limiter()
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:

@@ -86,6 +86,7 @@ class ExpenseOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    type: str = "expense"  # income | expense
     description: str
     category: str
     amount: float
@@ -96,6 +97,7 @@ class ExpenseCreate(BaseModel):
     description: str
     category: str
     amount: float
+    type: str = "expense"  # income | expense
 
 
 class SiteLogOut(BaseModel):
@@ -328,15 +330,16 @@ async def list_expenses(
     _user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
+    type: str | None = Query(default=None),  # income | expense
 ) -> list[ExpenseOut]:
-    """Gastos del dueño, los más recientes primero."""
+    """Movimientos financieros del dueño (ingresos y gastos)."""
+    stmt = select(Expense).where(Expense.tenant_id == _user.tenant_id)
+    if type in ("income", "expense"):
+        stmt = stmt.where(Expense.type == type)
     items = (
         (
             await db.execute(
-                select(Expense)
-                .where(Expense.tenant_id == _user.tenant_id)
-                .order_by(Expense.expense_date.desc())
-                .limit(limit)
+                stmt.order_by(Expense.expense_date.desc()).limit(limit)
             )
         )
         .scalars()
@@ -345,6 +348,7 @@ async def list_expenses(
     return [
         ExpenseOut(
             id=e.id,
+            type=e.type,
             description=e.description,
             category=e.category,
             amount=float(e.amount),
@@ -360,9 +364,10 @@ async def create_expense(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ExpenseOut:
-    """Registra un gasto desde el panel (igual que por chat)."""
+    """Registra un movimiento desde el panel (ingreso o gasto)."""
     e = Expense(
         tenant_id=current_user.tenant_id,
+        type=body.type if body.type in ("income", "expense") else "expense",
         description=body.description.strip(),
         category=body.category.strip(),
         amount=Decimal(str(body.amount)),
@@ -373,6 +378,7 @@ async def create_expense(
     await db.refresh(e)
     return ExpenseOut(
         id=e.id,
+        type=e.type,
         description=e.description,
         category=e.category,
         amount=float(e.amount),

@@ -144,6 +144,37 @@ class TenantAdminDetail(TenantAdminSummary):
     modules: list[ModuleAdminView]
     payment_methods: list[PaymentMethodOut]
     subscription: SubscriptionOut | None
+    last_message_at: datetime | None = None
+    last_quote_at: datetime | None = None
+    total_quotes_amount: float = 0
+    quotes_last_30d: int = 0
+    active_services: list[str] = []
+
+
+class TenantStatusUpdate(BaseModel):
+    is_active: bool
+
+
+class PlatformServiceStat(BaseModel):
+    key: str
+    name: str
+    interactions: int
+    tenants: int
+
+
+class PlatformPlanStat(BaseModel):
+    plan: str
+    count: int
+
+
+class PlatformAdminStats(BaseModel):
+    total_tenants: int
+    active_tenants: int
+    blocked_tenants: int
+    total_messages: int
+    total_quotes: int
+    services: list[PlatformServiceStat]
+    plans: list[PlatformPlanStat]
 
 
 class ConversationAdminItem(BaseModel):
@@ -172,3 +203,11 @@ class MessageAdminItem(BaseModel):
 class MessageAdminPage(BaseModel):
     items: list[MessageAdminItem]
     total: int
+
+
+class AdminMessageRequest(BaseModel):
+    message: str
+
+
+class AdminMessageResponse(BaseModel):
+    message_id: str

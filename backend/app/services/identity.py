@@ -128,13 +128,8 @@ async def resolve_identity(
         if identity is not None:
             identity.external_id = external_id
             await db.flush()
-            # Sin el teléfono real en logs — dato personal (Ley 1581);
-            # el LID es un identificador interno y puede quedar.
-            logger.info(
-                "Identidad %s/%s migrada al identificador real",
-                channel,
-                alias_external_id,
-            )
+            # No loguear identifiadores externos (teléfono/LID = PII, Ley 1581)
+            logger.info("Identidad %s migrada al identificador real", channel)
     if identity is not None:
         contact = (
             await db.execute(
@@ -287,9 +282,8 @@ async def link_identity(
     db.add(identity)
     await db.flush()
     logger.info(
-        "Identidad %s/%s vinculada al contacto %s (%s)",
+        "Identidad %s vinculada al contacto %s (%s)",
         channel,
-        external_id,
         contact.id,
         kind,
     )
@@ -319,9 +313,8 @@ async def clear_identities(
     if rows:
         await db.flush()
         logger.info(
-            "Identidades %s/%s limpiadas (%d): su dueño ya tiene tenant propio",
+            "Identidades %s limpiadas (%d): su dueño ya tiene tenant propio",
             channel,
-            external_id,
             len(rows),
         )
     return len(rows)

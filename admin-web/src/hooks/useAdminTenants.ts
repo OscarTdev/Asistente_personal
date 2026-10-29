@@ -13,6 +13,8 @@ import {
   fetchAdminTenantContacts,
   fetchAdminTenantContact,
   fetchAdminTenantContactMessages,
+  fetchPlatformAdminStats,
+  updateAdminTenantStatus,
   TenantCheckoutResult,
 } from '../lib/api'
 import {
@@ -21,15 +23,35 @@ import {
   AdminConversationPage,
   AdminMessagePage,
   TenantUpdatePayload,
-  ContactPage,
+  AdminTenantContactPage,
   AdminTenantContactDetail,
   AdminTenantContactMessagesPage,
+  PlatformAdminStats,
 } from '../types'
 
 export function useAdminTenants() {
   return useQuery<TenantSummary[], Error>({
     queryKey: ['admin-tenants'],
     queryFn: fetchAdminTenants,
+  })
+}
+
+export function usePlatformAdminStats() {
+  return useQuery<PlatformAdminStats, Error>({
+    queryKey: ['platform-admin-stats'],
+    queryFn: fetchPlatformAdminStats,
+  })
+}
+
+export function useUpdateAdminTenantStatus() {
+  const queryClient = useQueryClient()
+  return useMutation<TenantDetail, Error, { id: string; isActive: boolean }>({
+    mutationFn: ({ id, isActive }) => updateAdminTenantStatus(id, isActive),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-tenants'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-tenant', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['platform-admin-stats'] })
+    },
   })
 }
 
@@ -103,7 +125,7 @@ export function useAdminTenantContacts(
   activeOnly: boolean = true,
   tag?: string
 ) {
-  return useQuery<ContactPage, Error>({
+  return useQuery<AdminTenantContactPage, Error>({
     queryKey: ['admin-tenant-contacts', tenantId, skip, limit, search, activeOnly, tag],
     queryFn: () => fetchAdminTenantContacts(tenantId as string, skip, limit, search, activeOnly, tag),
     enabled: Boolean(tenantId),

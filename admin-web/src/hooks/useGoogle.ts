@@ -7,8 +7,16 @@ import {
   fetchGmailSummary,
   fetchGoogleStatus,
   googleCallback,
+  fetchGoogleContactsStatus,
+  importGoogleContacts,
 } from '../lib/api'
-import { GmailSummaryItem, GoogleCallbackResult, GoogleStatus } from '../types'
+import {
+  GmailSummaryItem,
+  GoogleCallbackResult,
+  GoogleContactsImportResult,
+  GoogleContactsStatus,
+  GoogleStatus,
+} from '../types'
 
 export function useGoogleStatus() {
   return useQuery<GoogleStatus, Error>({
@@ -49,5 +57,23 @@ export function useGmailTest(enabled: boolean) {
     queryKey: ['google', 'gmail-test'],
     queryFn: () => fetchGmailSummary(3),
     enabled,
+  })
+}
+
+export function useGoogleContactsStatus() {
+  return useQuery<GoogleContactsStatus, Error>({
+    queryKey: ['google', 'contacts-status'],
+    queryFn: fetchGoogleContactsStatus,
+  })
+}
+
+export function useImportGoogleContacts() {
+  const queryClient = useQueryClient()
+  return useMutation<GoogleContactsImportResult, Error, void>({
+    mutationFn: importGoogleContacts,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] })
+      queryClient.invalidateQueries({ queryKey: ['contact-tags'] })
+    },
   })
 }

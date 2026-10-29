@@ -232,6 +232,19 @@ async def test_list_tenants(
     assert by_slug["taller-gomez"]["total_modules"] == len(AVAILABLE_MODULES)
 
 
+async def test_list_tenants_supports_filters_and_pagination(
+    client: AsyncClient, platform_admin: User, tenant: Tenant, tenant2: Tenant
+):
+    response = await client.get(
+        "/api/v1/admin/tenants",
+        params={"q": "gomez", "limit": 1},
+        headers=_headers(platform_admin),
+    )
+    assert response.status_code == HTTPStatus.OK
+    data = response.json()
+    assert [item["slug"] for item in data] == ["taller-gomez"]
+
+
 # ── Cambio de plan y métodos de pago ────────────────────────────────────────
 
 

@@ -6,11 +6,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useEvents } from '../hooks/useEvents'
-import { useDashboardStats } from '../hooks/useDashboard'
+import { useDashboardStats, useRealtimeActivity } from '../hooks/useDashboard'
 import { useModules } from '../hooks/useModules'
 import { MessageFeed } from '../components/MessageFeed'
 import OnboardingTour, { useTourDone } from '../components/OnboardingTour'
 import { QUOTE_STATUS_LABELS } from '../lib/quoteStatus'
+import { ServiceStat } from '../types'
 import {
   IconUsers,
   IconFileText,
@@ -26,7 +27,7 @@ import {
   IconSettings,
   IconCalendar,
   IconStar,
-} from '../components/ui/icons'
+} from "@/components/ui/icons"
 
 // ── Stat Card ────────────────────────────────────────────────────────────────
 function StatCard({
@@ -157,7 +158,10 @@ function ServiceBar({
         </div>
       </div>
       <div className="progress-track">
-        <div className="progress-fill" style={{ width: `${Math.max(pct, value > 0 ? 4 : 0)}%` }} />
+        <div
+          className="progress-fill"
+          style={{ transform: `scaleX(${Math.max(pct, value > 0 ? 4 : 0) / 100})` }}
+        />
       </div>
     </div>
   )
@@ -221,6 +225,7 @@ export default function DashboardPage() {
   })
 
   const { data: stats, isLoading: statsLoading } = useDashboardStats()
+  const { data: realtime } = useRealtimeActivity()
   const { data: modules } = useModules()
 
   const dotClass =
@@ -229,7 +234,7 @@ export default function DashboardPage() {
     status === 'open' ? 'En servicio' : status === 'connecting' ? 'Reconectando…' : 'Fuera de servicio'
 
   const topServices = (stats?.services ?? []).slice(0, 6)
-  const maxInteractions = Math.max(1, ...topServices.map((s) => s.interactions))
+  const maxInteractions = Math.max(1, ...topServices.map((s: ServiceStat) => s.interactions))
   const activeServices =
     modules?.filter((m) => m.dev_status === 'active' && m.is_enabled).length ?? 0
 
@@ -305,7 +310,7 @@ export default function DashboardPage() {
         {/* ── Métricas ────────────────────────────────────────────────────── */}
         {statsLoading || !stats ? (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 stagger">
-            {[0, 1, 2, 3].map((i) => (
+            {[0, 1, 2, 3].map((i: number) => (
               <div key={i} className="stat-card animate-fade-in">
                 <div className="skel h-10 w-10 rounded-xl" />
                 <div className="mt-4 skel h-8 w-20" />
@@ -389,7 +394,7 @@ export default function DashboardPage() {
         )}
 
         {/* ── Servicios más demandados ─────────────────────────────────────── */}
-        {topServices.length > 0 && (
+        {isAdmin && topServices.length > 0 && (
           <section className="animate-fade-in" style={{ animationDelay: '180ms' }}>
             <div className="mb-4 flex items-center gap-2">
               <IconActivity className="h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />
@@ -401,7 +406,7 @@ export default function DashboardPage() {
               className="card p-6"
             >
               <div className="space-y-4">
-                {topServices.map((service) => (
+                {topServices.map((service: ServiceStat) => (
                   <ServiceBar
                     key={service.key}
                     name={service.name}
@@ -481,6 +486,44 @@ export default function DashboardPage() {
               Live
             </div>
           </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-wider text-linen-600">Usando Aura ahora</p>
+            <p className="mt-1 text-2xl font-bold text-ink">
+              {realtime?.active_now ?? 0}
+            </p>
+            <p className="text-xs text-linen-600">
+              contactos activos en los últimos 15 minutos
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-wider text-linen-600">Interacciones recientes</p>
+            <p className="mt-1 text-2xl font-bold text-ink">
+              {realtime?.messages_in_window ?? 0}
+            </p>
+            <p className="text-xs text-linen-600">mensajes recibidos o respondidos</p>
+          </div>
+          </div>
+          {(realtime?.users.length ?? 0) > 0 && (
+          <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-linen-600">
+              Quién está interactuando
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {realtime?.users.slice(0, 6).map((user) => (
+                <div key={user.contact_id} className="flex items-center justify-between rounded-lg bg-black/10 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{user.name}</p>
+                    <p className="text-xs text-linen-600">{user.wa_id}</p>
+                  </div>
+                  <span className="ml-3 shrink-0 text-xs text-linen-600">
+                    {user.messages} msg{user.messages === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          )}
           <MessageFeed events={events} />
         </section>
       </div>

@@ -20,6 +20,7 @@ from app.models import (
     Message,
     OnboardingSession,
     Tenant,
+    User,
 )
 from app.services import orchestrator
 
@@ -123,9 +124,9 @@ async def test_full_onboarding_with_consent_city_email_and_token(
     assert consent.consent_type == "privacy_policy"
     assert consent.contact_id == chat["contact"].id
 
-    # 3) Nombre del bot → tipo de cuenta
+    # 3) Nombre del bot → nombre preferido del dueño
     await _say(db_session, tenant, chat, channel, "Aura")
-    assert "persona natural" in channel.sent[-1][1].lower()
+    assert "llame" in channel.sent[-1][1].lower()
 
     # 4) Persona natural → SIN NIT, pide nombre
     await _say(db_session, tenant, chat, channel, "1")
@@ -215,6 +216,39 @@ async def test_onboarding_business_with_nit(
     ).scalar_one()
     assert new_tenant.account_type == "business"
     assert new_tenant.nit == "900123456-6"
+
+
+async def test_onboarding_new_order_uses_preferred_name_and_real_email(
+    db_session: AsyncSession, tenant: Tenant, bot_settings
+):
+    """El flujo nuevo pregunta trato, tipo y correo en el orden acordado."""
+    channel = FakeChannel()
+    chat = await _seed_prospect(db_session, tenant, wa_id="573009996555")
+
+    await orchestrator.handle_incoming(
+        db_session, tenant=tenant, channel=channel,
+        message=chat["message"], contact=chat["contact"],
+        conversation=chat["conversation"],
+    )
+    for answer in ("acepto", "Chispa", "Oscar", "1", "oscar@example.com", "1"):
+        await _say_raw(db_session, tenant, chat, channel, answer)
+
+    new_tenant = (
+        await db_session.execute(
+            select(Tenant).where(Tenant.slug == "oscar")
+        )
+    ).scalar_one()
+    user = (
+        await db_session.execute(
+            select(User).where(User.tenant_id == new_tenant.id)
+        )
+    ).scalar_one()
+
+    assert new_tenant.bot_name == "Chispa"
+    assert chat["contact"].name == "Oscar"
+    assert user.email == "oscar@example.com"
+    assert user.full_name == "Oscar"
+    assert user.is_active is False
 
 
 async def test_onboarding_session_is_resumable(

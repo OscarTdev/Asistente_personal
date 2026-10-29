@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { buildWsUrl } from '../lib/ws'
 import { FeedEvent } from '../types'
 
 export type WsStatus = 'connecting' | 'open' | 'closed'
+
+const RECONNECT_MS = 2500
 
 export function useEvents(
   token: string | null,
@@ -12,6 +14,10 @@ export function useEvents(
   const { logout } = useAuth()
   const [events, setEvents] = useState<FeedEvent[]>([])
   const [status, setStatus] = useState<WsStatus>('closed')
+  // El callback en un ref: evita que el efecto (y el socket) se re-creen
+  // en cada render del padre — solo se reconecta si cambia el token.
+  const onAuthErrorRef = useRef(onAuthError)
+  onAuthErrorRef.current = onAuthError
 
   useEffect(() => {
     if (!token) {
@@ -19,66 +25,60 @@ export function useEvents(
       return
     }
 
+    let disposed = false
     let ws: WebSocket | null = null
-    let status: WsStatus = 'connecting'
-    setStatus(status)
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
-    const wsUrl = buildWsUrl(token)
-    ws = new WebSocket(wsUrl)
+    setStatus('connecting')
 
-    ws.onopen = () => {
-      status = 'open'
-      setStatus(status)
-    }
+    const connect = () => {
+      if (disposed) return
+      ws = new WebSocket(buildWsUrl(token))
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data) as FeedEvent
-        // Ignore the connected message
-        if (data.type === 'connected') {
+      ws.onopen = () => {
+        if (!disposed) setStatus('open')
+      }
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as FeedEvent
+          // Ignore the connected message
+          if (data.type === 'connected') {
+            return
+          }
+          // Prepend the new event, keeping only the last 50
+          setEvents(prev => [data, ...prev.slice(0, 49)])
+        } catch (e) {
+          console.error('Error parsing WebSocket message:', e)
+        }
+      }
+
+      ws.onclose = (event) => {
+        if (disposed) return
+        // 1008 (policy violation) = token inválido/expirado: cerrar sesión
+        if (event.code === 1008) {
+          logout()
+          onAuthErrorRef.current?.()
           return
         }
-        // Prepend the new event, keeping only the last 50
-        setEvents(prev => [data, ...prev.slice(0, 49)])
-      } catch (e) {
-        console.error('Error parsing WebSocket message:', e)
+        // Cualquier otra caída (backend reiniciado, red): reconectar solo
+        setStatus('closed')
+        reconnectTimer = setTimeout(connect, RECONNECT_MS)
+      }
+
+      ws.onerror = () => {
+        // El onclose maneja la reconexión; aquí solo evitamos el ruido rojo
       }
     }
 
-    ws.onclose = (event) => {
-      status = 'closed'
-      setStatus(status)
-      // If the close code is 1008 (policy violation), it's an auth error
-      if (event.code === 1008) {
-        logout()
-        if (onAuthError) {
-          onAuthError()
-        }
-      } else {
-        // Otherwise, try to reconnect after 2 seconds
-        setTimeout(() => {
-          if (token) {
-            // Recursively call the effect? We'll just re-run the effect by resetting the token?
-            // We'll do nothing here; the effect will re-run if the token changes.
-            // We'll just set the status to connecting and try to reconnect.
-            setStatus('connecting')
-            // We'll create a new WebSocket? We'll do nothing and let the effect re-run.
-            // Instead, we'll do nothing and the effect will re-run on the next tick if token changes.
-            // We'll leave it as is.
-          }
-        }, 2000)
-      }
-    }
+    connect()
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
-    }
-
-    // Cleanup
     return () => {
+      disposed = true
+      if (reconnectTimer) clearTimeout(reconnectTimer)
       ws?.close()
     }
-  }, [token, logout, onAuthError])
+  }, [token, logout])
 
   return { events, status }
 }
